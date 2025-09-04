@@ -22,10 +22,13 @@ namespace ADApiService.Services
         public async Task<(UserResponse? StandardUser, UserResponse? AdminUser)> CreateUserAsync(CreateUserRequest request, ClaimsPrincipal requester)
         {
             var domainConfig = GetDomainConfig(request.Domain);
-            using var context = GetPrincipalContext(domainConfig);
+            var userOu = GetDistinguishedName(_adSettings.OUs.DefaultUsers, domainConfig.Name);
 
-            // 1. Create Standard User
-            var standardUserPrincipal = new UserPrincipal(context)
+            // Create a PrincipalContext scoped to the specific OU for user creation.
+            using var userCreationContext = GetPrincipalContext(domainConfig, userOu);
+
+            // 1. Create Standard User within the scoped context.
+            var standardUserPrincipal = new UserPrincipal(userCreationContext)
             {
                 SamAccountName = request.SamAccountName,
                 UserPrincipalName = $"{request.SamAccountName}@{domainConfig.Name}",
@@ -40,12 +43,15 @@ namespace ADApiService.Services
 
             standardUserPrincipal.SetPassword(request.Password);
             
-            var userOu = GetDistinguishedName(_adSettings.OUs.DefaultUsers, domainConfig.Name);
-            standardUserPrincipal.Save(userOu);
+            // Save the user. It will be created in the OU defined in the userCreationContext.
+            standardUserPrincipal.Save();
             _logger.LogInformation("Successfully created standard user '{SamAccountName}' in OU '{OU}'", request.SamAccountName, userOu);
             
+            // Use a domain-level context for group operations, as groups can be anywhere in the domain.
+            using var domainContext = GetPrincipalContext(domainConfig);
+
             // Add to default group
-            AddUserToGroup(context, request.SamAccountName, _adSettings.Groups.DefaultUserGroup);
+            AddUserToGroup(domainContext, request.SamAccountName, _adSettings.Groups.DefaultUserGroup);
 
             // Add to additional groups if requester has privileges
             if (IsHighPrivilege(requester) && request.AdditionalGroups != null)
@@ -55,7 +61,7 @@ namespace ADApiService.Services
                     // Security check: Only allow adding to pre-defined assignable groups
                     if(_adSettings.Roles.AssignableGroups.Contains(groupName, StringComparer.OrdinalIgnoreCase))
                     {
-                        AddUserToGroup(context, request.SamAccountName, groupName);
+                        AddUserToGroup(domainContext, request.SamAccountName, groupName);
                     }
                     else
                     {
@@ -70,11 +76,14 @@ namespace ADApiService.Services
             // 2. Create Privileged Admin User (if requester has rights)
             if (IsHighPrivilege(requester))
             {
+                var adminOu = GetDistinguishedName(_adSettings.OUs.AdminUsers, domainConfig.Name);
                 var adminSam = $"{request.SamAccountName}-a";
                 var adminDisplayName = $"admin-{request.FirstName}{request.LastName}";
-                var adminContext = GetPrincipalContext(domainConfig);
 
-                var adminUserPrincipal = new UserPrincipal(adminContext)
+                // Create a context specifically for the admin OU.
+                using var adminCreationContext = GetPrincipalContext(domainConfig, adminOu);
+
+                var adminUserPrincipal = new UserPrincipal(adminCreationContext)
                 {
                     SamAccountName = adminSam,
                     UserPrincipalName = $"{adminSam}@{domainConfig.Name}",
@@ -84,12 +93,12 @@ namespace ADApiService.Services
                 };
                 adminUserPrincipal.SetPassword(request.Password);
                 
-                var adminOu = GetDistinguishedName(_adSettings.OUs.AdminUsers, domainConfig.Name);
-                adminUserPrincipal.Save(adminOu);
-
+                // Save the admin user.
+                adminUserPrincipal.Save();
                 _logger.LogInformation("Successfully created admin user '{AdminSam}' in OU '{AdminOU}'", adminSam, adminOu);
 
-                AddUserToGroup(adminContext, adminSam, _adSettings.Groups.PrivilegedAdminGroup);
+                // Use the domain-level context to add the new user to the privileged group.
+                AddUserToGroup(domainContext, adminSam, _adSettings.Groups.PrivilegedAdminGroup);
                 adminUserResponse = MapUserToResponse(adminUserPrincipal);
             }
             
@@ -185,16 +194,22 @@ namespace ADApiService.Services
         
         // --- Private Helper Methods ---
 
-        private PrincipalContext GetPrincipalContext(DomainSettings domainConfig)
+        private PrincipalContext GetPrincipalContext(DomainSettings domainConfig, string? container = null)
         {
             try
             {
+                // If a container (OU) is specified, create the context scoped to that container.
+                if (!string.IsNullOrEmpty(container))
+                {
+                    return new PrincipalContext(ContextType.Domain, domainConfig.DomainController, container);
+                }
+                // Otherwise, create a context for the entire domain.
                 return new PrincipalContext(ContextType.Domain, domainConfig.DomainController);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to create PrincipalContext for domain controller '{DC}'", domainConfig.DomainController);
-                throw new InvalidOperationException($"Could not connect to Active Directory domain controller '{domainConfig.DomainController}'. Check configuration and network connectivity.", ex);
+                _logger.LogError(ex, "Failed to create PrincipalContext for domain controller '{DC}' and container '{Container}'", domainConfig.DomainController, container ?? "N/A");
+                throw new InvalidOperationException($"Could not connect to Active Directory on '{domainConfig.DomainController}'. Check configuration and network connectivity.", ex);
             }
         }
         
