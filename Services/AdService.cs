@@ -37,8 +37,15 @@ public class AdService : IAdService
     {
         await Task.Run(() =>
         {
-            using var context = new PrincipalContext(ContextType.Domain, request.Domain);
-            var userPrincipal = new UserPrincipal(context)
+            // The format string from config (e.g., "OU=Users,OU=_Managed,{0}") is combined
+            // with a dynamically generated DC path (e.g., "DC=new,DC=lab,DC=local").
+            var dcPath = "DC=" + string.Join(",DC=", request.Domain.Split('.'));
+            var userOu = string.Format(_adSettings.DefaultUserOuFormat, dcPath);
+
+            // Create a context that targets the specific OU where the user will be created.
+            using var userCreationContext = new PrincipalContext(ContextType.Domain, request.Domain, userOu);
+
+            var userPrincipal = new UserPrincipal(userCreationContext)
             {
                 SamAccountName = request.SamAccountName,
                 GivenName = request.FirstName,
@@ -50,14 +57,26 @@ public class AdService : IAdService
             };
             userPrincipal.SetPassword(request.Password);
             
-            var ou = string.Format(_adSettings.DefaultUserOuFormat, request.Domain.Split('.'));
-            userPrincipal.Save(ou);
+            // Save the user principal. It will be created in the OU defined in the context.
+            userPrincipal.Save();
             
-            // Add to default groups
+            _logger.LogInformation("User '{SamAccountName}' created in OU '{UserOU}'.", request.SamAccountName, userOu);
+
+            // To find groups (which are likely not in the user's OU), create a new context for the domain root.
+            using var domainContext = new PrincipalContext(ContextType.Domain, request.Domain);
             foreach (var groupName in _adSettings.Provisioning.DefaultUserGroups)
             {
-                var group = GroupPrincipal.FindByIdentity(context, groupName);
-                if (group != null) group.Members.Add(userPrincipal);
+                var group = GroupPrincipal.FindByIdentity(domainContext, groupName);
+                if (group != null)
+                {
+                    group.Members.Add(userPrincipal);
+                    group.Save();
+                    _logger.LogInformation("Added user '{SamAccountName}' to group '{GroupName}'.", request.SamAccountName, groupName);
+                }
+                else
+                {
+                    _logger.LogWarning("Default group '{GroupName}' not found in domain '{Domain}'. User was not added.", groupName, request.Domain);
+                }
             }
         });
     }
@@ -106,6 +125,7 @@ public class AdService : IAdService
             {
                 user.UnlockAccount();
             }
+            user.Save();
         });
     }
 
@@ -120,6 +140,7 @@ public class AdService : IAdService
             if (user.IsAccountLockedOut())
             {
                 user.UnlockAccount();
+                user.Save();
             }
         });
     }
