@@ -1,27 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
-
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <!-- When deploying to a server without the .NET SDK, setting this to false is often necessary. 
-         For self-contained deployments, you might set it to true. -->
-    <PublishIISAssets>false</PublishIISAssets>
   </PropertyGroup>
-
   <ItemGroup>
-    <!-- Enables Windows Authentication (Negotiate) -->
     <PackageReference Include="Microsoft.AspNetCore.Authentication.Negotiate" Version="8.0.3" />
-    
-    <!-- Core package for interacting with Active Directory -->
     <PackageReference Include="System.DirectoryServices.AccountManagement" Version="8.0.0" />
-
-    <!-- Provides advanced LDAP functionalities if needed -->
-    <PackageReference Include="System.DirectoryServices.Protocols" Version="8.0.0" />
-    
-    <!-- Swagger for API documentation -->
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.4.0" />
   </ItemGroup>
-
 </Project>
-
