@@ -1,4 +1,4 @@
-using ADApiService.Models;
+using ADApiService.Models; // <-- THIS LINE IS THE FIX
 using ADApiService.Services;
 using Microsoft.AspNetCore.Mvc;
 
@@ -16,7 +16,7 @@ namespace ADApiService.Controllers
         }
 
         [HttpPost("create")]
-        public async Task<IActionResult> CreateUser([FromBody] CreateUserRequest request)
+        public async Task<IActionResult> CreateUser([FromBody] CreateUserRequest request) // This line needs the fix
         {
             try
             {
@@ -32,7 +32,8 @@ namespace ADApiService.Controllers
                 return StatusCode(500, new ApiError("An unexpected error occurred during user creation.", ex.Message));
             }
         }
-
+        
+        // ... other methods in this controller will also need the 'using' statement ...
         [HttpPut("update")]
         public async Task<IActionResult> UpdateUser([FromBody] UpdateUserRequest request)
         {
@@ -50,7 +51,7 @@ namespace ADApiService.Controllers
                 return StatusCode(500, new ApiError("An error occurred while updating the user.", ex.Message));
             }
         }
-        
+
         [HttpGet("details/{domain}/{samAccountName}")]
         public async Task<IActionResult> GetUserDetails(string domain, string samAccountName)
         {
