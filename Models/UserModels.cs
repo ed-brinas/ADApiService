@@ -16,6 +16,7 @@ public class CreateUserRequest
     [Required]
     public string Password { get; set; } = string.Empty;
     public List<string>? OptionalGroups { get; set; }
+    public bool CreateAdminAccount { get; set; }
 }
 
 // Data Transfer Object for listing users
