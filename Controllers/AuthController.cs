@@ -44,8 +44,10 @@ public class AuthController : ControllerBase
 
         try
         {
-            using var context = new PrincipalContext(ContextType.Domain, _adSettings.ForestRootDomain);
-            _logger.LogDebug("Connecting to Forest Root Domain '{Domain}' to resolve SIDs.", _adSettings.ForestRootDomain);
+            // FIX: Changed from ContextType.Domain to ContextType.Forest
+            // This allows resolving SIDs from any domain in the forest via the Global Catalog.
+            using var context = new PrincipalContext(ContextType.Forest, _adSettings.ForestRootDomain);
+            _logger.LogDebug("Connecting to Forest Global Catalog '{Forest}' to resolve SIDs.", _adSettings.ForestRootDomain);
 
             foreach (var sid in groupSids)
             {
@@ -70,7 +72,7 @@ public class AuthController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogCritical(ex, "CRITICAL_FAILURE: Could not connect to PrincipalContext for domain '{Domain}'. Check service account permissions and network connectivity to the domain controller.", _adSettings.ForestRootDomain);
+            _logger.LogCritical(ex, "CRITICAL_FAILURE: Could not connect to PrincipalContext for forest '{Forest}'. Check service account permissions and network connectivity to the domain controller.", _adSettings.ForestRootDomain);
             return StatusCode(500, new ApiError("Failed to contact Active Directory.", "Could not resolve user's group memberships."));
         }
 
