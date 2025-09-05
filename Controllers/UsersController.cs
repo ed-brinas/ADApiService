@@ -16,11 +16,11 @@ namespace ADApiService.Controllers
         }
 
         [HttpPost("create")]
-        public async Task<IActionResult> CreateUser([FromBody] CreateUserModel model)
+        public async Task<IActionResult> CreateUser([FromBody] CreateUserRequest request)
         {
             try
             {
-                var result = await _adService.CreateUserAsync(User, model);
+                var result = await _adService.CreateUserAsync(User, request);
                 if (!result)
                 {
                     return BadRequest(new ApiError("User creation failed. The user may already exist or input is invalid."));
@@ -33,21 +33,24 @@ namespace ADApiService.Controllers
             }
         }
 
-        [HttpGet("list")]
-        public async Task<IActionResult> ListUsers([FromQuery] string domain, [FromQuery] string? nameFilter, [FromQuery] bool? statusFilter)
+        [HttpPut("update")]
+        public async Task<IActionResult> UpdateUser([FromBody] UpdateUserRequest request)
         {
             try
             {
-                var users = await _adService.ListUsersAsync(domain, nameFilter, statusFilter);
-                return Ok(users);
+                var success = await _adService.UpdateUserAsync(User, request);
+                if (!success)
+                {
+                    return BadRequest(new ApiError("Failed to update user. See logs for details."));
+                }
+                return NoContent(); // Success
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new ApiError("An error occurred while listing users.", ex.Message));
+                return StatusCode(500, new ApiError("An error occurred while updating the user.", ex.Message));
             }
         }
         
-        // NEW: Endpoint to get full details for one user
         [HttpGet("details/{domain}/{samAccountName}")]
         public async Task<IActionResult> GetUserDetails(string domain, string samAccountName)
         {
@@ -66,26 +69,17 @@ namespace ADApiService.Controllers
             }
         }
 
-        // NEW: Endpoint to update a user's properties
-        [HttpPut("update")]
-        public async Task<IActionResult> UpdateUser([FromBody] UpdateUserRequest request)
+        [HttpGet("list")]
+        public async Task<IActionResult> ListUsers([FromQuery] string domain, [FromQuery] string? nameFilter, [FromQuery] bool? statusFilter)
         {
             try
             {
-                var success = await _adService.UpdateUserAsync(User, request);
-                if (!success)
-                {
-                    return BadRequest(new ApiError("Failed to update user. See logs for details."));
-                }
-                return NoContent(); // Success
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                return Forbid(ex.Message);
+                var users = await _adService.ListUsersAsync(domain, nameFilter, statusFilter);
+                return Ok(users);
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new ApiError("An error occurred while updating the user.", ex.Message));
+                return StatusCode(500, new ApiError("An error occurred while listing users.", ex.Message));
             }
         }
     }
