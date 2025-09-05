@@ -1,30 +1,66 @@
-using Microsoft.AspNetCore.Mvc;
-using ADApiService.Services;
 using ADApiService.Models;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
+using System.Security.Claims;
+using System.DirectoryServices.AccountManagement;
 
-namespace ADApiService.Controllers;
-
-[ApiController]
-[Route("api/[controller]")]
-public class AuthController : ControllerBase
+namespace ADApiService.Controllers
 {
-    private readonly IAdService _adService;
-
-    public AuthController(IAdService adService)
+    [Route("api/[controller]")]
+    [ApiController]
+    public class AuthController : ControllerBase
     {
-        _adService = adService;
-    }
+        private readonly AdSettings _adSettings;
 
-    [HttpGet("me")]
-    public ActionResult<UserContext> GetCurrentUserContext()
-    {
-        try
+        public AuthController(IOptions<AdSettings> adSettings)
         {
-            return Ok(_adService.GetUserContext(User));
+            _adSettings = adSettings.Value;
         }
-        catch (Exception ex)
+
+        [HttpGet("me")]
+        public IActionResult GetCurrentUser()
         {
-            return StatusCode(500, new ApiError("Failed to retrieve user context", ex.Message));
+            if (User.Identity?.IsAuthenticated != true)
+            {
+                return Unauthorized();
+            }
+            
+            var userGroups = new List<string>();
+            // This logic requires System.DirectoryServices.AccountManagement
+            // It resolves the user's group SIDs to their sAMAccountNames
+            foreach (var claim in User.FindAll(ClaimTypes.GroupSid))
+            {
+                try
+                {
+                    using var context = new PrincipalContext(ContextType.Domain);
+                    var group = GroupPrincipal.FindByIdentity(context, IdentityType.Sid, claim.Value);
+                    if (group != null)
+                    {
+                        if (!string.IsNullOrEmpty(group.SamAccountName))
+                        {
+                            userGroups.Add(group.SamAccountName);
+                        }
+                        group.Dispose();
+                    }
+                }
+                catch
+                {
+                    // Ignore groups that can't be resolved
+                }
+            }
+
+            var isHighPrivilege = _adSettings.HighPrivilegeGroups.Any(g => userGroups.Contains(g, StringComparer.OrdinalIgnoreCase));
+            var canCreateUsers = isHighPrivilege || _adSettings.GeneralAccessGroups.Any(g => userGroups.Contains(g, StringComparer.OrdinalIgnoreCase));
+
+            var userModel = new
+            {
+                Name = User.Identity.Name,
+                IsHighPrivilege = isHighPrivilege,
+                CanCreateUsers = canCreateUsers,
+                Groups = userGroups
+            };
+
+            return Ok(userModel);
         }
     }
 }
