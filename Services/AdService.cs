@@ -98,13 +98,48 @@ namespace ADApiService.Services
 
         public async Task<IEnumerable<UserListItem>> ListUsersAsync(string domain, string? nameFilter, bool? statusFilter)
         {
-            await Task.Yield(); // To make the method async
-            _logger.LogInformation("Placeholder for listing users in domain {Domain}", domain);
-            return new List<UserListItem>
+            return await Task.Run(() =>
             {
-                new UserListItem { SamAccountName = "testuser", DisplayName = "Test User", Enabled = true, EmailAddress = "test@test.com" }
-            };
+                var users = new List<UserListItem>();
+                try
+                {
+                    using var context = GetPrincipalContext(domain);
+                    var userPrinc = new UserPrincipal(context);
+                    
+                    if (!string.IsNullOrWhiteSpace(nameFilter))
+                    {
+                        userPrinc.SamAccountName = $"*{nameFilter}*";
+                    }
+                    if (statusFilter.HasValue)
+                    {
+                        userPrinc.Enabled = statusFilter.Value;
+                    }
+                    
+                    using var searcher = new PrincipalSearcher(userPrinc);
+                    foreach (var result in searcher.FindAll())
+                    {
+                        if (result is UserPrincipal user)
+                        {
+                            // Add this logic to check for the admin account
+                            var adminSam = $"{user.SamAccountName}-a";
+                            var hasAdminAccount = UserPrincipal.FindByIdentity(context, IdentityType.SamAccountName, adminSam) != null;
+        
+                            users.Add(new UserListItem
+                            {
+                                DisplayName = user.DisplayName,
+                                SamAccountName = user.SamAccountName,
+                                EmailAddress = user.EmailAddress,
+                                Enabled = user.Enabled ?? false,
+                                HasAdminAccount = hasAdminAccount // Populate the new property
+                            });
+                        }
+                    }
+                }
+                catch (Exception ex) { _logger.LogError(ex, "Error listing users in domain '{domain}'.", domain); }
+                return users;
+            });
         }
+
     }
 }
 
