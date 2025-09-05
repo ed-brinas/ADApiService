@@ -1,8 +1,8 @@
 using ADApiService.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
-using System.Security.Claims;
 using System.DirectoryServices.AccountManagement;
+using System.Security.Claims;
 
 namespace ADApiService.Controllers
 {
@@ -24,43 +24,39 @@ namespace ADApiService.Controllers
             {
                 return Unauthorized();
             }
-            
-            var userGroups = new List<string>();
-            // This logic requires System.DirectoryServices.AccountManagement
-            // It resolves the user's group SIDs to their sAMAccountNames
-            foreach (var claim in User.FindAll(ClaimTypes.GroupSid))
+
+            var userGroups = User.FindAll(ClaimTypes.GroupSid)
+                .Select(s => s.Value)
+                .ToList();
+
+            var resolvedGroupNames = new List<string>();
+            try
             {
-                try
+                using var context = new PrincipalContext(ContextType.Domain, _adSettings.ForestRootDomain);
+                foreach (var sid in userGroups)
                 {
-                    using var context = new PrincipalContext(ContextType.Domain);
-                    var group = GroupPrincipal.FindByIdentity(context, IdentityType.Sid, claim.Value);
-                    if (group != null)
+                    var group = GroupPrincipal.FindByIdentity(context, IdentityType.Sid, sid);
+                    if (group != null && !string.IsNullOrEmpty(group.SamAccountName))
                     {
-                        if (!string.IsNullOrEmpty(group.SamAccountName))
-                        {
-                            userGroups.Add(group.SamAccountName);
-                        }
-                        group.Dispose();
+                        resolvedGroupNames.Add(group.SamAccountName);
                     }
                 }
-                catch
-                {
-                    // Ignore groups that can't be resolved
-                }
             }
+            catch
+            {
+                // In case of issues connecting to AD, proceed with unresolved SIDs if necessary or log the error.
+            }
+            
+            var isHighPrivilege = _adSettings.AccessControl.HighPrivilegeGroups.Any(g => resolvedGroupNames.Contains(g, StringComparer.OrdinalIgnoreCase));
+            var canCreateUsers = isHighPrivilege || _adSettings.AccessControl.GeneralAccessGroups.Any(g => resolvedGroupNames.Contains(g, StringComparer.OrdinalIgnoreCase));
 
-            var isHighPrivilege = _adSettings.HighPrivilegeGroups.Any(g => userGroups.Contains(g, StringComparer.OrdinalIgnoreCase));
-            var canCreateUsers = isHighPrivilege || _adSettings.GeneralAccessGroups.Any(g => userGroups.Contains(g, StringComparer.OrdinalIgnoreCase));
-
-            var userModel = new
+            return Ok(new
             {
                 Name = User.Identity.Name,
                 IsHighPrivilege = isHighPrivilege,
                 CanCreateUsers = canCreateUsers,
-                Groups = userGroups
-            };
-
-            return Ok(userModel);
+                Groups = resolvedGroupNames
+            });
         }
     }
 }
