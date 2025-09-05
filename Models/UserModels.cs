@@ -43,6 +43,7 @@ namespace ADApiService.Models
         public string SamAccountName { get; set; } = string.Empty;
         public string? EmailAddress { get; set; }
         public bool Enabled { get; set; }
+        public bool HasAdminAccount { get; set; } // Add this line
     }
 }
 
