@@ -1,62 +1,81 @@
 using ADApiService.Models;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using System.DirectoryServices.AccountManagement;
 using System.Security.Claims;
 
-namespace ADApiService.Controllers
+namespace ADApiService.Controllers;
+
+/// <summary>
+/// Provides configuration settings to the frontend.
+/// </summary>
+[Route("api/[controller]")]
+[ApiController]
+[Authorize]
+public class ConfigController : ControllerBase
 {
-    [Route("api/[controller]")]
-    [ApiController]
-    public class ConfigController : ControllerBase
+    private readonly AdSettings _adSettings;
+    private readonly ILogger<ConfigController> _logger;
+
+    public ConfigController(IOptions<AdSettings> adSettings, ILogger<ConfigController> logger)
     {
-        private readonly AdSettings _adSettings;
-        private readonly ILogger<ConfigController> _logger;
+        _adSettings = adSettings.Value;
+        _logger = logger;
+    }
 
-        public ConfigController(IOptions<AdSettings> adSettings, ILogger<ConfigController> logger)
-        {
-            _adSettings = adSettings.Value;
-            _logger = logger;
-        }
+    /// <summary>
+    /// Gets configuration settings required by the frontend application.
+    /// </summary>
+    /// <remarks>
+    /// This endpoint tailors the response based on the calling user's permissions.
+    /// For example, the list of optional groups is only sent to high-privilege users.
+    /// </remarks>
+    /// <returns>A dynamic object containing configuration settings.</returns>
+    [HttpGet("settings")]
+    [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public IActionResult GetSettings()
+    {
+        var isHighPrivilege = IsUserHighPrivilege(User);
 
-        [HttpGet("settings")]
-        public IActionResult GetSettings()
+        var settings = new
         {
-            // First, determine if the calling user is in a high-privilege group.
-            var isHighPrivilege = false;
-            try
+            Domains = _adSettings.Domains,
+            OptionalGroupsForHighPrivilege = isHighPrivilege ? _adSettings.Provisioning.OptionalGroupsForHighPrivilege : new List<string>()
+        };
+
+        return Ok(settings);
+    }
+    
+    private bool IsUserHighPrivilege(ClaimsPrincipal callingUser)
+    {
+        // This helper method centralizes the logic for checking high-privilege status.
+        var groupSids = callingUser.FindAll(ClaimTypes.GroupSid).Select(c => c.Value);
+        try
+        {
+            using var context = new PrincipalContext(ContextType.Domain, _adSettings.ForestRootDomain);
+            foreach (var sid in groupSids)
             {
-                var userGroupSids = User.FindAll(ClaimTypes.GroupSid).Select(c => c.Value);
-                using var context = new PrincipalContext(ContextType.Domain, _adSettings.ForestRootDomain);
-
-                foreach (var sid in userGroupSids)
+                try
                 {
-                    var group = GroupPrincipal.FindByIdentity(context, IdentityType.Sid, sid);
-                    if (group != null && _adSettings.AccessControl.HighPrivilegeGroups.Contains(group.SamAccountName, StringComparer.OrdinalIgnoreCase))
-                    {
-                        isHighPrivilege = true;
-                        break;
-                    }
+                     var group = GroupPrincipal.FindByIdentity(context, IdentityType.Sid, sid);
+                     if (group != null && _adSettings.AccessControl.HighPrivilegeGroups.Contains(group.SamAccountName, StringComparer.OrdinalIgnoreCase))
+                     {
+                         return true;
+                     }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogTrace(ex, "Could not resolve SID {Sid} to a group name.", sid);
                 }
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to resolve user group memberships for settings endpoint.");
-                // Fail securely - assume user is not high privilege if AD lookup fails.
-                isHighPrivilege = false;
-            }
-
-            // Construct the settings object to return to the frontend.
-            var settings = new
-            {
-                Domains = _adSettings.Domains,
-                // Only send the list of optional groups if the user is privileged.
-                // This line is corrected to use the proper property name.
-                OptionalGroupsForHighPrivilege = isHighPrivilege ? _adSettings.Provisioning.OptionalGroupsForHighPrivilege : new List<string>()
-            };
-
-            return Ok(settings);
         }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error connecting to forest root domain '{Domain}' to determine user privilege.", _adSettings.ForestRootDomain);
+        }
+        return false;
     }
 }
 
