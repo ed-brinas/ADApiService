@@ -2,8 +2,7 @@ using System.ComponentModel.DataAnnotations;
 
 namespace ADApiService.Models;
 
-// Data Transfer Object for creating a new user
-public class CreateUserRequest
+public class CreateUserModel
 {
     [Required]
     public string Domain { get; set; } = string.Empty;
@@ -15,11 +14,10 @@ public class CreateUserRequest
     public string SamAccountName { get; set; } = string.Empty;
     [Required]
     public string Password { get; set; } = string.Empty;
-    public List<string>? OptionalGroups { get; set; }
+    public List<string> OptionalGroups { get; set; } = new();
     public bool CreateAdminAccount { get; set; }
 }
 
-// Data Transfer Object for listing users
 public class UserListItem
 {
     public string DisplayName { get; set; } = string.Empty;
@@ -28,21 +26,22 @@ public class UserListItem
     public bool Enabled { get; set; }
 }
 
-// Data Transfer Object for the current authenticated user's context
-public class UserContext
+// NEW: Full details for a single user for the edit form
+public class UserDetailModel
 {
-    public string Name { get; set; } = string.Empty;
-    public bool IsHighPrivilege { get; set; }
+    public string DisplayName { get; set; } = string.Empty;
+    public string SamAccountName { get; set; } = string.Empty;
+    public bool HasAdminAccount { get; set; }
+    public List<string> MemberOf { get; set; } = new();
 }
 
-// Data Transfer Object for resetting a password
-public class ResetPasswordRequest
+// NEW: Data sent from the frontend to update a user
+public class UpdateUserRequest
 {
     [Required]
     public string Domain { get; set; } = string.Empty;
     [Required]
     public string SamAccountName { get; set; } = string.Empty;
-    [Required]
-    public string NewPassword { get; set; } = string.Empty;
+    public List<string>? OptionalGroups { get; set; }
+    public bool CreateAdminAccount { get; set; }
 }
-
