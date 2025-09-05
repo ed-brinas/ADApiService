@@ -1,85 +1,93 @@
-using Microsoft.AspNetCore.Mvc;
 using ADApiService.Models;
 using ADApiService.Services;
+using Microsoft.AspNetCore.Mvc;
 
-namespace ADApiService.Controllers;
-
-[ApiController]
-[Route("api/[controller]")]
-public class UsersController : ControllerBase
+namespace ADApiService.Controllers
 {
-    private readonly IAdService _adService;
-    private readonly ILogger<UsersController> _logger;
-
-    public UsersController(IAdService adService, ILogger<UsersController> logger)
+    [Route("api/[controller]")]
+    [ApiController]
+    public class UsersController : ControllerBase
     {
-        _adService = adService;
-        _logger = logger;
-    }
+        private readonly IAdService _adService;
 
-    [HttpPost("create")]
-    public async Task<IActionResult> CreateUser([FromBody] CreateUserRequest request)
-    {
-        try
+        public UsersController(IAdService adService)
         {
-            await _adService.CreateUserAsync(request, User);
-            _logger.LogInformation("User '{SamAccountName}' created successfully by '{CallingUser}'.", request.SamAccountName, User.Identity!.Name);
-            return Ok(new { message = $"User {request.SamAccountName} created successfully." });
+            _adService = adService;
         }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error creating user '{SamAccountName}'.", request.SamAccountName);
-            return StatusCode(500, new ApiError("User creation failed.", ex.Message));
-        }
-    }
-    
-    [HttpGet("list")]
-    public async Task<ActionResult<IEnumerable<UserListItem>>> ListUsers([FromQuery] string domain, [FromQuery] string? nameFilter, [FromQuery] bool? statusFilter)
-    {
-        try
-        {
-            var users = await _adService.ListUsersAsync(domain, nameFilter, statusFilter);
-            return Ok(users);
-        }
-        catch (Exception ex)
-        {
-             _logger.LogError(ex, "Error listing users in domain '{Domain}'.", domain);
-            return StatusCode(500, new ApiError("Failed to list users.", ex.Message));
-        }
-    }
 
-    [HttpPost("resetpassword")]
-    public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequest request)
-    {
-        try
+        [HttpPost("create")]
+        public async Task<IActionResult> CreateUser([FromBody] CreateUserModel model)
         {
-            await _adService.ResetPasswordAsync(request.Domain, request.SamAccountName, request.NewPassword);
-            return Ok(new { message = "Password reset successfully." });
+            try
+            {
+                var result = await _adService.CreateUserAsync(User, model);
+                if (!result)
+                {
+                    return BadRequest(new ApiError("User creation failed. The user may already exist or input is invalid."));
+                }
+                return Ok(new { message = "User created successfully." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new ApiError("An unexpected error occurred during user creation.", ex.Message));
+            }
         }
-        catch (Exception ex)
+
+        [HttpGet("list")]
+        public async Task<IActionResult> ListUsers([FromQuery] string domain, [FromQuery] string? nameFilter, [FromQuery] bool? statusFilter)
         {
-            return StatusCode(500, new ApiError("Password reset failed.", ex.Message));
+            try
+            {
+                var users = await _adService.ListUsersAsync(domain, nameFilter, statusFilter);
+                return Ok(users);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new ApiError("An error occurred while listing users.", ex.Message));
+            }
+        }
+        
+        // NEW: Endpoint to get full details for one user
+        [HttpGet("details/{domain}/{samAccountName}")]
+        public async Task<IActionResult> GetUserDetails(string domain, string samAccountName)
+        {
+            try
+            {
+                var userDetails = await _adService.GetUserDetailsAsync(domain, samAccountName);
+                if (userDetails == null)
+                {
+                    return NotFound(new ApiError("User not found."));
+                }
+                return Ok(userDetails);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new ApiError("An error occurred while fetching user details.", ex.Message));
+            }
+        }
+
+        // NEW: Endpoint to update a user's properties
+        [HttpPut("update")]
+        public async Task<IActionResult> UpdateUser([FromBody] UpdateUserRequest request)
+        {
+            try
+            {
+                var success = await _adService.UpdateUserAsync(User, request);
+                if (!success)
+                {
+                    return BadRequest(new ApiError("Failed to update user. See logs for details."));
+                }
+                return NoContent(); // Success
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Forbid(ex.Message);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new ApiError("An error occurred while updating the user.", ex.Message));
+            }
         }
     }
-
-    [HttpPost("unlock")]
-    public async Task<IActionResult> UnlockAccount([FromBody] UnlockAccountRequest request)
-    {
-        try
-        {
-            await _adService.UnlockAccountAsync(request.Domain, request.SamAccountName);
-            return Ok(new { message = "Account unlocked successfully." });
-        }
-        catch (Exception ex)
-        {
-            return StatusCode(500, new ApiError("Account unlock failed.", ex.Message));
-        }
-    }
-}
-
-public class UnlockAccountRequest
-{
-    public string Domain { get; set; } = string.Empty;
-    public string SamAccountName { get; set; } = string.Empty;
 }
 
