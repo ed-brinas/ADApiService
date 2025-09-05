@@ -86,20 +86,5 @@ public class UserContextModel
     public List<string> Groups { get; set; } = [];
 }
 
-/// <summary>
-/// Represents a standardized API error response.
-/// </summary>
-public class ApiError
-{
-    public string Message { get; }
-    public string? Detail { get; }
-
-    public ApiError(string message, string? detail = null)
-    {
-        Message = message;
-        Detail = detail;
-    }
-}
-
 #endregion
 
