@@ -496,7 +496,7 @@ public class AdService : IAdService
         }
 
         // 4. Add 2 lowercase letters to meet the 10-character minimum
-        for (int i = 0; i < 2; i++)
+        for (int i = <strong>0</strong>; i < 2; i++)
         {
             passwordChars.Add(lowerChars[random.Next(lowerChars.Length)]);
         }
@@ -510,3 +510,4 @@ public class AdService : IAdService
 
     #endregion
 }
+
