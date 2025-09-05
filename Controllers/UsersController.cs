@@ -22,12 +22,12 @@ public class UsersController : ControllerBase
     }
 
     /// <summary>
-    /// Searches for users within configured OUs.
+    /// Retrieves a list of users from a specified domain, with optional filters.
     /// </summary>
-    /// <param name="domain">The domain to search in.</param>
-    /// <param name="nameFilter">A filter for name or sAMAccountName.</param>
-    /// <param name="statusFilter">Filter by account status (true=enabled, false=disabled).</param>
-    /// <returns>A list of matching users.</returns>
+    /// <param name="domain">The domain to search in (e.g., "lab.local").</param>
+    /// <param name="nameFilter">A filter for the user's name or sAMAccountName.</param>
+    /// <param name="statusFilter">Filters users by their enabled/disabled status.</param>
+    /// <returns>A list of users matching the criteria.</returns>
     [HttpGet("list")]
     [ProducesResponseType(typeof(IEnumerable<UserListItem>), 200)]
     public async Task<IActionResult> ListUsers([FromQuery] string domain, [FromQuery] string? nameFilter, [FromQuery] bool? statusFilter)
@@ -37,20 +37,20 @@ public class UsersController : ControllerBase
     }
 
     /// <summary>
-    /// Retrieves detailed information for a single user.
+    /// Gets detailed information for a single user account.
     /// </summary>
     /// <param name="domain">The domain of the user.</param>
     /// <param name="samAccountName">The sAMAccountName of the user.</param>
-    /// <returns>Detailed user information.</returns>
+    /// <returns>Detailed information about the user.</returns>
     [HttpGet("details/{domain}/{samAccountName}")]
     [ProducesResponseType(typeof(UserDetailModel), 200)]
-    [ProducesResponseType(404)]
+    [ProducesResponseType(typeof(ApiError), 404)]
     public async Task<IActionResult> GetUserDetails(string domain, string samAccountName)
     {
         var userDetails = await _adService.GetUserDetailsAsync(domain, samAccountName);
         if (userDetails == null)
         {
-            return NotFound();
+            return NotFound(new ApiError($"User '{samAccountName}' not found in domain '{domain}'."));
         }
         return Ok(userDetails);
     }
@@ -71,14 +71,14 @@ public class UsersController : ControllerBase
             var response = await _adService.CreateUserAsync(User, request);
             return Ok(response);
         }
+        catch (InvalidOperationException ioex)
+        {
+            return Unauthorized(new ApiError("Permission denied.", ioex.Message));
+        }
         catch (PrincipalOperationException poex)
         {
             _logger.LogError(poex, "AD PrincipalOperationException while creating user '{SamAccountName}'.", request.SamAccountName);
             return BadRequest(new ApiError("Active Directory operation failed.", poex.Message));
-        }
-        catch (InvalidOperationException ioex)
-        {
-            return Unauthorized(new ApiError("Permission denied.", ioex.Message));
         }
         catch (Exception ex)
         {
@@ -86,49 +86,81 @@ public class UsersController : ControllerBase
             return StatusCode(500, new ApiError("An unexpected server error occurred.", ex.Message));
         }
     }
-    
+
     /// <summary>
-    /// Updates a user's group memberships and/or manages their associated admin account.
+    /// Updates a user's optional group memberships and manages their associated admin account.
     /// </summary>
     [HttpPut("update")]
     [ProducesResponseType(204)]
     [ProducesResponseType(typeof(ApiError), 400)]
-    public async Task<IActionResult> UpdateUser([FromBody] UpdateUserRequest request) 
-    { 
+    [ProducesResponseType(typeof(ApiError), 401)]
+    [ProducesResponseType(typeof(ApiError), 404)]
+    [ProducesResponseType(typeof(ApiError), 500)]
+    public async Task<IActionResult> UpdateUser([FromBody] UpdateUserRequest request)
+    {
         try
         {
             await _adService.UpdateUserAsync(User, request);
             return NoContent();
         }
+        catch (InvalidOperationException ioex)
+        {
+            return Unauthorized(new ApiError("Permission denied.", ioex.Message));
+        }
+        catch (KeyNotFoundException knfex)
+        {
+            return NotFound(new ApiError(knfex.Message));
+        }
+        catch (PrincipalOperationException poex)
+        {
+            _logger.LogError(poex, "AD PrincipalOperationException while updating user '{SamAccountName}'.", request.SamAccountName);
+            return BadRequest(new ApiError("Active Directory operation failed.", poex.Message));
+        }
         catch (Exception ex)
         {
-            return BadRequest(new ApiError("Failed to update user.", ex.Message));
+            _logger.LogError(ex, "Unexpected error while updating user '{SamAccountName}'.", request.SamAccountName);
+            return StatusCode(500, new ApiError("An unexpected server error occurred.", ex.Message));
         }
     }
 
     /// <summary>
-    /// Resets a user's password.
+    /// Resets a user's password to a new, randomly generated password.
     /// </summary>
+    /// <returns>The user's account name and the new password.</returns>
     [HttpPost("reset-password")]
-    [ProducesResponseType(204)]
-    public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequest request) 
-    { 
+    [ProducesResponseType(typeof(object), 200)]
+    [ProducesResponseType(typeof(ApiError), 404)]
+    [ProducesResponseType(typeof(ApiError), 400)]
+    [ProducesResponseType(typeof(ApiError), 500)]
+    public async Task<IActionResult> ResetPassword([FromBody] UserActionRequest request)
+    {
         try
         {
-            await _adService.ResetPasswordAsync(request);
-            return NoContent();
+            var newPassword = await _adService.ResetPasswordAsync(request);
+            return Ok(new { SamAccountName = request.SamAccountName, NewPassword = newPassword });
+        }
+        catch (KeyNotFoundException knfex)
+        {
+            return NotFound(new ApiError(knfex.Message));
+        }
+        catch (PrincipalOperationException poex)
+        {
+            return BadRequest(new ApiError("Active Directory operation failed.", poex.Message));
         }
         catch (Exception ex)
         {
-            return BadRequest(new ApiError("Failed to reset password.", ex.Message));
+            _logger.LogError(ex, "Unexpected error while resetting password for '{SamAccountName}'.", request.SamAccountName);
+            return StatusCode(500, new ApiError("An unexpected server error occurred.", ex.Message));
         }
     }
 
     /// <summary>
-    /// Unlocks a user's account.
+    /// Unlocks a user's account if it is locked out.
     /// </summary>
     [HttpPost("unlock")]
     [ProducesResponseType(204)]
+    [ProducesResponseType(typeof(ApiError), 404)]
+    [ProducesResponseType(typeof(ApiError), 500)]
     public async Task<IActionResult> UnlockAccount([FromBody] UserActionRequest request)
     {
         try
@@ -136,9 +168,14 @@ public class UsersController : ControllerBase
             await _adService.UnlockAccountAsync(request);
             return NoContent();
         }
+        catch (KeyNotFoundException knfex)
+        {
+            return NotFound(new ApiError(knfex.Message));
+        }
         catch (Exception ex)
         {
-            return BadRequest(new ApiError("Failed to unlock account.", ex.Message));
+            _logger.LogError(ex, "Unexpected error while unlocking account for '{SamAccountName}'.", request.SamAccountName);
+            return StatusCode(500, new ApiError("An unexpected server error occurred.", ex.Message));
         }
     }
 }
