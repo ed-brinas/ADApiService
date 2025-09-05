@@ -170,8 +170,7 @@ public class AdService : IAdService
 
                 if (IsUserHighPrivilege(callingUser) && request.CreateAdminAccount)
                 {
-                    var adminDetails = CreateAssociatedAdminAccount(request);
-                    response.AdminAccount = adminDetails;
+                    response.AdminAccount = CreateAssociatedAdminAccount(request);
                 }
                 
                 response.Message = $"Successfully created user '{request.SamAccountName}'.";
@@ -468,26 +467,43 @@ public class AdService : IAdService
     
     private string GenerateRandomPassword()
     {
-        const string upper = "ABCDEFGHJKLMNOPQRSTUVWXYZ";
-        const string lower = "abcdefghijkmnopqrstuvwxyz";
-        const string number = "0123456789";
-        const string special = "!@#$%^&*?_-";
+        const string upperChars = "ABCDEFGHJKLMNOPQRSTUVWXYZ";
+        const string lowerChars = "abcdefghijkmnopqrstuvwxyz";
+        const string numberChars = "0123456789";
+        const string specialChars = "!@#$%^&*?_-";
         
         var random = new Random();
-        var password = new StringBuilder();
-        
-        password.Append(upper[random.Next(upper.Length)]);
-        password.Append(lower[random.Next(lower.Length)]);
-        password.Append(number[random.Next(number.Length)]);
-        password.Append(special[random.Next(special.Length)]);
-        
-        var allChars = upper + lower + number + special;
-        for (int i = 4; i < 14; i++)
+        var passwordChars = new List<char>();
+
+        // 1. Add exactly 3 uppercase letters
+        for (int i = 0; i < 3; i++)
         {
-            password.Append(allChars[random.Next(allChars.Length)]);
+            passwordChars.Add(upperChars[random.Next(upperChars.Length)]);
         }
+
+        // 2. Add exactly 3 numbers
+        for (int i = 0; i < 3; i++)
+        {
+            passwordChars.Add(numberChars[random.Next(numberChars.Length)]);
+        }
+
+        // 3. Add exactly 2 special characters
+        for (int i = 0; i < 2; i++)
+        {
+            passwordChars.Add(specialChars[random.Next(specialChars.Length)]);
+        }
+
+        // 4. Add 2 lowercase letters to meet the 10-character minimum
+        for (int i = 0; i < 2; i++)
+        {
+            passwordChars.Add(lowerChars[random.Next(lowerChars.Length)]);
+        }
+
+        // 5. Shuffle the characters to ensure randomness
+        var shuffledPassword = new string(passwordChars.OrderBy(x => random.Next()).ToArray());
         
-        return new string(password.ToString().ToCharArray().OrderBy(x => random.Next()).ToArray());
+        _logger.LogDebug("Generated new random password of length {Length}", shuffledPassword.Length);
+        return shuffledPassword;
     }
 
     #endregion
