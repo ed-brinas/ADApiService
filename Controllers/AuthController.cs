@@ -40,40 +40,49 @@ public class AuthController : ControllerBase
         var userGroups = new List<string>();
         var groupSids = User.FindAll(ClaimTypes.GroupSid).Select(c => c.Value).ToList();
         
-        _logger.LogDebug("Found {Count} Group SIDs in user's token: {SIDs}", groupSids.Count, string.Join(", ", groupSids));
+        _logger.LogDebug("Found {Count} Group SIDs in user's token.", groupSids.Count);
 
-        try
+        var unresolvedSids = new HashSet<string>(groupSids);
+
+        // FIX: Iterate through each configured domain instead of using ContextType.Forest
+        foreach (var domain in _adSettings.Domains)
         {
-            // FIX: Changed from ContextType.Domain to ContextType.Forest
-            // This allows resolving SIDs from any domain in the forest via the Global Catalog.
-            using var context = new PrincipalContext(ContextType.Forest, _adSettings.ForestRootDomain);
-            _logger.LogDebug("Connecting to Forest Global Catalog '{Forest}' to resolve SIDs.", _adSettings.ForestRootDomain);
+            if (!unresolvedSids.Any()) break; // Optimization: Stop if all SIDs have been resolved.
 
-            foreach (var sid in groupSids)
+            try
             {
-                try
+                _logger.LogDebug("Attempting to resolve SIDs against domain: {Domain}", domain);
+                using var context = new PrincipalContext(ContextType.Domain, domain);
+                var sidsInThisDomain = unresolvedSids.ToList(); // Create a copy to iterate over
+
+                foreach (var sid in sidsInThisDomain)
                 {
-                    var group = GroupPrincipal.FindByIdentity(context, IdentityType.Sid, sid);
-                    if (group?.SamAccountName != null)
+                    try
                     {
-                        userGroups.Add(group.SamAccountName);
-                        _logger.LogInformation("SUCCESS: Resolved SID {Sid} to Group Name: {GroupName}", sid, group.SamAccountName);
+                        var group = GroupPrincipal.FindByIdentity(context, IdentityType.Sid, sid);
+                        if (group?.SamAccountName != null)
+                        {
+                            userGroups.Add(group.SamAccountName);
+                            unresolvedSids.Remove(sid); // Mark SID as resolved
+                            _logger.LogInformation("SUCCESS: Resolved SID {Sid} to Group Name: {GroupName} in domain {Domain}", sid, group.SamAccountName, domain);
+                        }
                     }
-                    else
+                    catch (Exception ex)
                     {
-                         _logger.LogWarning("FAILURE: Could not resolve SID {Sid} to a group. It might be a well-known SID or from a different forest.", sid);
+                        _logger.LogTrace(ex, "Could not resolve SID {Sid} in domain {Domain}. This is expected if the group belongs to another domain.", sid, domain);
                     }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "ERROR: An exception occurred while trying to resolve SID {Sid}.", sid);
                 }
             }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "CRITICAL_FAILURE: Could not connect to PrincipalContext for domain '{Domain}'. Check service account permissions and network connectivity.", domain);
+                // Continue to the next domain rather than failing the entire request.
+            }
         }
-        catch (Exception ex)
+
+        if (unresolvedSids.Any())
         {
-            _logger.LogCritical(ex, "CRITICAL_FAILURE: Could not connect to PrincipalContext for forest '{Forest}'. Check service account permissions and network connectivity to the domain controller.", _adSettings.ForestRootDomain);
-            return StatusCode(500, new ApiError("Failed to contact Active Directory.", "Could not resolve user's group memberships."));
+            _logger.LogWarning("Could not resolve {Count} SIDs: {SIDs}", unresolvedSids.Count, string.Join(", ", unresolvedSids));
         }
 
         var isHighPrivilege = _adSettings.AccessControl.HighPrivilegeGroups.Any(g => userGroups.Contains(g, StringComparer.OrdinalIgnoreCase));
