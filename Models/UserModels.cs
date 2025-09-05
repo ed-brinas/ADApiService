@@ -1,49 +1,105 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace ADApiService.Models
+namespace ADApiService.Models;
+
+#region API Request Models
+
+/// <summary>
+/// Represents the data required to create a new user account.
+/// </summary>
+public class CreateUserRequest
 {
-    // This is the definition of CreateUserRequest
-    public class CreateUserRequest
-    {
-        [Required]
-        public string Domain { get; set; } = string.Empty;
-        [Required]
-        public string FirstName { get; set; } = string.Empty;
-        [Required]
-        public string LastName { get; set; } = string.Empty;
-        [Required]
-        public string SamAccountName { get; set; } = string.Empty;
-        [Required]
-        public string Password { get; set; } = string.Empty;
-        public List<string>? OptionalGroups { get; set; }
-        public bool CreateAdminAccount { get; set; }
-    }
+    [Required] public string Domain { get; set; } = string.Empty;
+    [Required] public string FirstName { get; set; } = string.Empty;
+    [Required] public string LastName { get; set; } = string.Empty;
+    [Required] public string SamAccountName { get; set; } = string.Empty;
+    [Required] public string Password { get; set; } = string.Empty;
+    public List<string>? OptionalGroups { get; set; }
+    public bool CreateAdminAccount { get; set; }
+}
 
-    public class UpdateUserRequest
-    {
-        [Required]
-        public string Domain { get; set; } = string.Empty;
-        [Required]
-        public string SamAccountName { get; set; } = string.Empty;
-        public List<string>? OptionalGroups { get; set; }
-        public bool CreateAdminAccount { get; set; }
-    }
+/// <summary>
+/// Represents the data required to update an existing user account.
+/// </summary>
+public class UpdateUserRequest
+{
+    [Required] public string Domain { get; set; } = string.Empty;
+    [Required] public string SamAccountName { get; set; } = string.Empty;
+    public List<string>? OptionalGroups { get; set; }
+    public bool ManageAdminAccount { get; set; }
+}
 
-    public class UserDetailModel
+/// <summary>
+/// Represents the data required to reset a user's password.
+/// </summary>
+public class ResetPasswordRequest
+{
+    [Required] public string Domain { get; set; } = string.Empty;
+    [Required] public string SamAccountName { get; set; } = string.Empty;
+    [Required] public string NewPassword { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Represents a generic request to perform an action on a user account.
+/// </summary>
+public class UserActionRequest
+{
+    [Required] public string Domain { get; set; } = string.Empty;
+    [Required] public string SamAccountName { get; set; } = string.Empty;
+}
+
+#endregion
+
+#region API Response Models
+
+/// <summary>
+/// Represents the summarized information for a user in a list.
+/// </summary>
+public class UserListItem
+{
+    public string DisplayName { get; set; } = string.Empty;
+    public string SamAccountName { get; set; } = string.Empty;
+    public string? EmailAddress { get; set; }
+    public bool Enabled { get; set; }
+    public bool HasAdminAccount { get; set; }
+}
+
+/// <summary>
+/// Represents the detailed information for a single user, used for the edit form.
+/// </summary>
+public class UserDetailModel
+{
+    public string DisplayName { get; set; } = string.Empty;
+    public string SamAccountName { get; set; } = string.Empty;
+    public bool HasAdminAccount { get; set; }
+    public List<string> MemberOf { get; set; } = [];
+}
+
+/// <summary>
+/// Represents the authenticated user's context, including their permissions.
+/// </summary>
+public class UserContextModel
+{
+    public string Name { get; set; } = string.Empty;
+    public bool IsHighPrivilege { get; set; }
+    public bool CanCreateUsers { get; set; }
+    public List<string> Groups { get; set; } = [];
+}
+
+/// <summary>
+/// Represents a standardized API error response.
+/// </summary>
+public class ApiError
+{
+    public string Message { get; }
+    public string? Detail { get; }
+
+    public ApiError(string message, string? detail = null)
     {
-        public string DisplayName { get; set; } = string.Empty;
-        public string SamAccountName { get; set; } = string.Empty;
-        public bool HasAdminAccount { get; set; }
-        public List<string> MemberOf { get; set; } = new();
-    }
-    
-    public class UserListItem
-    {
-        public string DisplayName { get; set; } = string.Empty;
-        public string SamAccountName { get; set; } = string.Empty;
-        public string? EmailAddress { get; set; }
-        public bool Enabled { get; set; }
-        public bool HasAdminAccount { get; set; } // Add this line
+        Message = message;
+        Detail = detail;
     }
 }
+
+#endregion
 
