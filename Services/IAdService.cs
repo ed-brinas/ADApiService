@@ -24,7 +24,7 @@ public interface IAdService
     /// <param name="samAccountName">The user's sAMAccountName.</param>
     /// <returns>Detailed information for the user, or null if not found.</returns>
     Task<UserDetailModel?> GetUserDetailsAsync(string domain, string samAccountName);
-    
+        
     /// <summary>
     /// Creates a new standard user and, optionally, an associated admin account.
     /// </summary>
@@ -54,5 +54,6 @@ public interface IAdService
     /// <param name="request">The unlock request details.</param>
     /// <returns>True if the account was unlocked successfully; otherwise, false.</returns>
     Task<bool> UnlockAccountAsync(UserActionRequest request);
+
 }
 
