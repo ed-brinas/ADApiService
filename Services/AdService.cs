@@ -128,7 +128,7 @@ public class AdService : IAdService
         return await Task.Run(() =>
         {
             var response = new CreateUserResponse();
-            var generatedPassword = string.IsNullOrEmpty(request.Password) ? GenerateRandomPassword() : request.Password;
+            var generatedPassword = GenerateRandomPassword();
 
             try
             {
@@ -245,9 +245,9 @@ public class AdService : IAdService
 
     #region Password and Account Status
 
-    public async Task ResetPasswordAsync(ResetPasswordRequest request)
+    public async Task<string> ResetPasswordAsync(UserActionRequest request)
     {
-        await Task.Run(() =>
+        return await Task.Run(() =>
         {
             try
             {
@@ -259,11 +259,13 @@ public class AdService : IAdService
                     throw new KeyNotFoundException($"Password reset failed: User '{request.SamAccountName}' not found in domain '{request.Domain}'.");
                 }
 
-                user.SetPassword(request.NewPassword);
+                var newPassword = GenerateRandomPassword();
+                user.SetPassword(newPassword);
                 user.ExpirePasswordNow();
                 user.UnlockAccount();
                 user.Save();
                 _logger.LogInformation("Successfully reset password for user '{SamAccountName}'.", request.SamAccountName);
+                return newPassword;
             }
             catch (Exception ex)
             {
