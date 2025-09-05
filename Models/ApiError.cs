@@ -6,20 +6,15 @@ namespace ADApiService.Models;
 public class ApiError
 {
     /// <summary>
-    /// A high-level, user-friendly error message.
+    /// A high-level summary of the error.
     /// </summary>
-    public string Message { get; }
+    public string Message { get; set; }
 
     /// <summary>
-    /// Optional, more detailed information about the error, intended for developers.
+    /// Optional: a more detailed, technical explanation of the error.
     /// </summary>
-    public string? Detail { get; }
+    public string? Detail { get; set; }
 
-    /// <summary>
-    /// Creates a new instance of the ApiError.
-    /// </summary>
-    /// <param name="message">The high-level error message.</param>
-    /// <param name="detail">Optional detailed error information.</param>
     public ApiError(string message, string? detail = null)
     {
         Message = message;
