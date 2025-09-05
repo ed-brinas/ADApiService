@@ -55,7 +55,6 @@ public class AdService : IAdService
                         using(result)
                         {
                              var adminSam = $"{result.SamAccountName}-a";
-                             // Use a broader context to find the admin account which may be in a different OU
                              using var domainContext = new PrincipalContext(ContextType.Domain, domain);
                              var hasAdminAccount = UserPrincipal.FindByIdentity(domainContext, IdentityType.SamAccountName, adminSam) != null;
 
@@ -118,7 +117,7 @@ public class AdService : IAdService
 
     #region User Creation and Updates
 
-    public async Task CreateUserAsync(ClaimsPrincipal callingUser, CreateUserRequest request)
+    public async Task<CreateUserResponse> CreateUserAsync(ClaimsPrincipal callingUser, CreateUserRequest request)
     {
         if (!IsUserHighPrivilege(callingUser) && (request.CreateAdminAccount || request.OptionalGroups?.Any() == true))
         {
@@ -126,8 +125,11 @@ public class AdService : IAdService
             throw new InvalidOperationException("You do not have permission to create users with optional groups or associated admin accounts.");
         }
 
-        await Task.Run(() =>
+        return await Task.Run(() =>
         {
+            var response = new CreateUserResponse();
+            var generatedPassword = string.IsNullOrEmpty(request.Password) ? GenerateRandomPassword() : request.Password;
+
             try
             {
                 var ou = GetOuForDomain(_adSettings.Provisioning.DefaultUserOuFormat, request.Domain);
@@ -147,22 +149,33 @@ public class AdService : IAdService
                     UserCannotChangePassword = false,
                     Enabled = true
                 };
-                user.SetPassword(request.Password);
+                user.SetPassword(generatedPassword);
                 user.Save();
                 user.ExpirePasswordNow();
                 user.Save();
-
-                _logger.LogInformation("Successfully created user '{SamAccountName}'.", request.SamAccountName);
+                
+                response.UserAccount = new UserAccountDetails
+                {
+                    SamAccountName = user.SamAccountName,
+                    DisplayName = user.DisplayName,
+                    UserPrincipalName = user.UserPrincipalName,
+                    InitialPassword = generatedPassword
+                };
 
                 if (IsUserHighPrivilege(callingUser) && request.OptionalGroups?.Any() == true)
                 {
-                    AddUserToGroups(context, user, request.OptionalGroups);
+                    AddUserToGroups(user, request.OptionalGroups);
+                    response.GroupsAssociated.AddRange(request.OptionalGroups);
                 }
 
                 if (IsUserHighPrivilege(callingUser) && request.CreateAdminAccount)
                 {
-                    CreateAssociatedAdminAccount(request);
+                    var adminDetails = CreateAssociatedAdminAccount(request);
+                    response.AdminAccount = adminDetails;
                 }
+                
+                response.Message = $"Successfully created user '{request.SamAccountName}'.";
+                return response;
             }
             catch (Exception ex)
             {
@@ -343,13 +356,14 @@ public class AdService : IAdService
         return groupNames;
     }
 
-    private void CreateAssociatedAdminAccount(CreateUserRequest request)
+    private AdminAccountDetails CreateAssociatedAdminAccount(CreateUserRequest request)
     {
         var adminOu = GetOuForDomain(_adSettings.Provisioning.AdminUserOuFormat, request.Domain);
         using var context = new PrincipalContext(ContextType.Domain, request.Domain, adminOu);
         
         var adminSam = $"{request.SamAccountName}-a";
         var adminDisplayName = $"admin-{request.FirstName}{request.LastName}";
+        var generatedPassword = GenerateRandomPassword();
         _logger.LogInformation("Attempting to create admin account '{AdminSam}' in OU '{AdminOu}'.", adminSam, adminOu);
 
         using var adminUser = new UserPrincipal(context)
@@ -358,44 +372,56 @@ public class AdService : IAdService
             DisplayName = adminDisplayName,
             Name = adminDisplayName,
             UserPrincipalName = $"{adminSam}@{request.Domain}",
-            PasswordNotRequired = false,
-            UserCannotChangePassword = false,
             Enabled = true
         };
-        // Use a generated password if one isn't provided (e.g., during an update)
-        adminUser.SetPassword(request.Password ?? GenerateRandomPassword());
+        adminUser.SetPassword(generatedPassword);
         adminUser.Save();
         adminUser.ExpirePasswordNow();
         adminUser.Save();
 
-        AddUserToGroups(context, adminUser, [_adSettings.Provisioning.AdminGroup]);
+        AddUserToGroups(adminUser, [_adSettings.Provisioning.AdminGroup]);
         _logger.LogInformation("Successfully created and configured admin account '{AdminSam}'.", adminSam);
+
+        return new AdminAccountDetails
+        {
+            SamAccountName = adminUser.SamAccountName,
+            DisplayName = adminUser.DisplayName,
+            UserPrincipalName = adminUser.UserPrincipalName,
+            InitialPassword = generatedPassword
+        };
     }
     
-    private void AddUserToGroups(PrincipalContext context, UserPrincipal user, List<string> groupNames)
+    private void AddUserToGroups(UserPrincipal user, List<string> groupNames)
     {
         foreach (var groupName in groupNames.Where(g => !string.IsNullOrWhiteSpace(g)))
         {
-            try
+            GroupPrincipal? group = null;
+            foreach(var domain in _adSettings.Domains)
             {
-                using var group = GroupPrincipal.FindByIdentity(context, IdentityType.SamAccountName, groupName);
-                if (group != null)
+                try 
                 {
-                    if (!group.Members.Contains(user))
+                    using var context = new PrincipalContext(ContextType.Domain, domain);
+                    group = GroupPrincipal.FindByIdentity(context, IdentityType.SamAccountName, groupName);
+                    if (group != null)
                     {
-                        group.Members.Add(user);
-                        group.Save();
-                        _logger.LogInformation("Added user '{User}' to group '{Group}'.", user.SamAccountName, groupName);
+                        if (!group.Members.Contains(user))
+                        {
+                            group.Members.Add(user);
+                            group.Save();
+                            _logger.LogInformation("Added user '{User}' to group '{Group}' found in domain '{Domain}'.", user.SamAccountName, groupName, domain);
+                        }
+                        break; 
                     }
                 }
-                else
+                catch (Exception ex)
                 {
-                    _logger.LogWarning("Could not find group '{Group}' to add user '{User}'.", groupName, user.SamAccountName);
+                     _logger.LogError(ex, "Error while trying to add user '{User}' to group '{Group}' in domain '{Domain}'.", user.SamAccountName, groupName, domain);
                 }
             }
-            catch (Exception ex)
+
+            if (group == null)
             {
-                _logger.LogError(ex, "Failed to add user '{User}' to group '{Group}'.", user.SamAccountName, groupName);
+                _logger.LogWarning("Could not find group '{Group}' in any configured domain to add user '{User}'.", groupName, user.SamAccountName);
             }
         }
     }
@@ -412,7 +438,7 @@ public class AdService : IAdService
             .ToList();
 
         var groupsToAdd = targetGroupNames.Except(currentGroupNames!, StringComparer.OrdinalIgnoreCase);
-        AddUserToGroups(context, user, groupsToAdd.ToList());
+        AddUserToGroups(user, groupsToAdd.ToList());
 
         var groupsToRemove = currentGroupNames!.Except(targetGroupNames, StringComparer.OrdinalIgnoreCase);
         foreach (var groupName in groupsToRemove)
