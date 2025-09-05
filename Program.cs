@@ -1,38 +1,60 @@
 using ADApiService.Models;
 using ADApiService.Services;
 using Microsoft.AspNetCore.Authentication.Negotiate;
+using Microsoft.OpenApi.Models;
+using System.Reflection;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// --- Configuration & Services ---
+// --- 1. Service Configuration ---
+
+// Bind appsettings.json to the AdSettings class for strongly-typed configuration
 builder.Services.Configure<AdSettings>(builder.Configuration.GetSection("AdSettings"));
+
 builder.Services.AddControllers();
+
+// Register the AdService for dependency injection
 builder.Services.AddScoped<IAdService, AdService>();
 
-// --- Authentication & Authorization ---
+// --- 2. Authentication & Authorization ---
+
+// Set up Windows Authentication (Kerberos/NTLM)
 builder.Services.AddAuthentication(NegotiateDefaults.AuthenticationScheme).AddNegotiate();
+
 builder.Services.AddAuthorization(options =>
 {
-    // This policy requires an authenticated user for any endpoint that doesn't have a specific authorization attribute.
+    // Require an authenticated user for all endpoints by default
     options.FallbackPolicy = new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder()
         .RequireAuthenticatedUser()
         .Build();
 });
 
-// --- API Documentation (Swagger) ---
+// --- 3. API Documentation (Swagger) ---
+
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(c =>
+builder.Services.AddSwaggerGen(options =>
 {
-    c.SwaggerDoc("v1", new() { Title = "AD User Management API", Version = "v1" });
+    options.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Version = "v1",
+        Title = "Active Directory Management API",
+        Description = "A secure API for managing users in a multi-domain Active Directory forest."
+    });
+
+    // Include XML comments in Swagger UI
+    var xmlFilename = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
+    options.IncludeXmlComments(Path.Combine(AppContext.BaseDirectory, xmlFilename));
 });
 
-// --- Cross-Origin Resource Sharing (CORS) ---
-// Allows the ADWebPortal (running on a different port) to call this API.
+
+// --- 4. CORS Configuration ---
+
+var corsSettings = builder.Configuration.GetSection("Cors").Get<CorsSettings>() ?? new CorsSettings();
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
     {
-        policy.WithOrigins("http://localhost:7000") // URL of the ADWebPortal
+        policy.WithOrigins(corsSettings.AllowedOrigins.ToArray())
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials(); // Required for Windows Authentication
@@ -40,25 +62,32 @@ builder.Services.AddCors(options =>
 });
 
 
+// --- 5. Build the Application ---
+
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
+// --- 6. Middleware Pipeline ---
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
-    // The Swagger UI will be available at /swagger
-    app.UseSwaggerUI();
+    app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "AD Management API v1"));
+    // Add developer exception page for detailed errors in development
+    app.UseDeveloperExceptionPage();
 }
 
-// --- IMPORTANT: HTTPS Redirection is now REMOVED ---
-// app.UseHttpsRedirection();
-
-// The order of these is important: Routing -> CORS -> Auth -> Authorization -> Endpoints
-app.UseRouting();
 app.UseCors();
+
 app.UseAuthentication();
 app.UseAuthorization();
+
 app.MapControllers();
 
 app.Run();
+
+// Helper class for CORS settings
+public class CorsSettings
+{
+    public List<string> AllowedOrigins { get; set; } = new();
+}
 
