@@ -16,39 +16,94 @@ namespace ADApiService.Services
             _logger = logger;
         }
 
-        public Task<bool> CreateUserAsync(ClaimsPrincipal callingUser, CreateUserRequest request)
+        private PrincipalContext GetPrincipalContext(string domain)
         {
-            // Placeholder for the full implementation from previous turns
-            _logger.LogInformation("CreateUserAsync called by {user} for {newUser}", callingUser.Identity?.Name, request.SamAccountName);
-            // Full implementation logic would go here, using PrincipalContext, not UserContext.
-            return Task.FromResult(true);
+            // Connect to the specific domain controller for the target domain if needed,
+            // or let AD handle it by just providing the domain name.
+            return new PrincipalContext(ContextType.Domain, domain);
         }
-
-        public Task<bool> UpdateUserAsync(ClaimsPrincipal callingUser, UpdateUserRequest request)
+        
+        private bool IsUserHighPrivilege(ClaimsPrincipal callingUser)
         {
-            // Placeholder for the full implementation from previous turns
-            _logger.LogInformation("UpdateUserAsync called by {user} for {targetUser}", callingUser.Identity?.Name, request.SamAccountName);
-            // Full implementation logic would go here.
-            return Task.FromResult(true);
-        }
-
-        public Task<UserDetailModel?> GetUserDetailsAsync(string domain, string samAccountName)
-        {
-            // Placeholder for the full implementation from previous turns
-             _logger.LogInformation("GetUserDetailsAsync called for {targetUser} in domain {domain}", samAccountName, domain);
-            // Full implementation logic would go here.
-            return Task.FromResult<UserDetailModel?>(new UserDetailModel { SamAccountName = samAccountName, DisplayName = "Dummy User" });
-        }
-
-        public Task<IEnumerable<UserListItem>> ListUsersAsync(string domain, string? nameFilter, bool? statusFilter)
-        {
-             // Placeholder for the full implementation from previous turns
-            _logger.LogInformation("ListUsersAsync called for domain {domain}", domain);
-            var dummyUsers = new List<UserListItem>
+            var userGroups = GetUserGroupSids(callingUser);
+            // This requires resolving SIDs to names, which is resource-intensive.
+            // A more optimized approach might cache group memberships.
+            using var context = new PrincipalContext(ContextType.Domain, _adSettings.ForestRootDomain);
+            foreach (var sid in userGroups)
             {
-                new UserListItem { SamAccountName = "jdoe", DisplayName = "John Doe", Enabled = true, EmailAddress = "jdoe@example.com" }
+                try
+                {
+                    var group = GroupPrincipal.FindByIdentity(context, IdentityType.Sid, sid);
+                    if (group != null && _adSettings.AccessControl.HighPrivilegeGroups.Contains(group.SamAccountName, StringComparer.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Could not resolve SID {Sid} to a group name.", sid);
+                }
+            }
+            return false;
+        }
+
+        private List<string> GetUserGroupSids(ClaimsPrincipal user)
+        {
+            return user.FindAll(ClaimTypes.GroupSid).Select(c => c.Value).ToList();
+        }
+
+        public async Task<bool> CreateUserAsync(ClaimsPrincipal callingUser, CreateUserRequest request)
+        {
+            // Full implementation logic will go here.
+            // For now, this is a placeholder to ensure compilation.
+            await Task.Yield(); // To make the method async
+            
+            if (!IsUserHighPrivilege(callingUser) && (request.CreateAdminAccount || (request.OptionalGroups != null && request.OptionalGroups.Any())))
+            {
+                 _logger.LogWarning("Security violation: User {user} attempted to create user with high privileges.", callingUser.Identity?.Name);
+                 return false; // Non-privileged user trying to assign privileged groups/roles
+            }
+
+            // Corrected property name here:
+            if (request.OptionalGroups != null)
+            {
+                foreach(var group in request.OptionalGroups)
+                {
+                    if (!_adSettings.Provisioning.OptionalGroupsForHighPrivilege.Contains(group, StringComparer.OrdinalIgnoreCase))
+                    {
+                         _logger.LogWarning("Security violation: User {user} attempted to assign a non-approved optional group: {group}", callingUser.Identity?.Name, group);
+                         return false; // Attempt to assign a group not in the allowed list
+                    }
+                }
+            }
+
+
+            _logger.LogInformation("Placeholder for creating user {SamAccountName} in domain {Domain}", request.SamAccountName, request.Domain);
+            return true;
+        }
+
+        public async Task<bool> UpdateUserAsync(ClaimsPrincipal callingUser, UpdateUserRequest request)
+        {
+             await Task.Yield(); // To make the method async
+             _logger.LogInformation("Placeholder for updating user {SamAccountName} in domain {Domain}", request.SamAccountName, request.Domain);
+            return true;
+        }
+
+        public async Task<UserDetailModel?> GetUserDetailsAsync(string domain, string samAccountName)
+        {
+            await Task.Yield(); // To make the method async
+            _logger.LogInformation("Placeholder for getting details for user {SamAccountName}", samAccountName);
+            return new UserDetailModel { SamAccountName = samAccountName, DisplayName = "Dummy User Details" };
+        }
+
+        public async Task<IEnumerable<UserListItem>> ListUsersAsync(string domain, string? nameFilter, bool? statusFilter)
+        {
+            await Task.Yield(); // To make the method async
+            _logger.LogInformation("Placeholder for listing users in domain {Domain}", domain);
+            return new List<UserListItem>
+            {
+                new UserListItem { SamAccountName = "testuser", DisplayName = "Test User", Enabled = true, EmailAddress = "test@test.com" }
             };
-            return Task.FromResult<IEnumerable<UserListItem>>(dummyUsers);
         }
     }
 }
