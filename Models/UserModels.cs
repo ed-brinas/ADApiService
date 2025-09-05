@@ -124,15 +124,7 @@ public class UserDetailModel
     public List<string> MemberOf { get; set; } = new(); 
 }
 
-/// <summary>
-/// Represents a standardized API error response.
-/// </summary>
-public class ApiError 
-{ 
-    public string Message { get; set; } 
-    public string? Detail { get; set; } 
-    public ApiError(string message, string? detail = null) { Message = message; Detail = detail; } 
-}
+// The duplicate ApiError class has been REMOVED from this file.
 
 #endregion
 
