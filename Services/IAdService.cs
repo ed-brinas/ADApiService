@@ -12,7 +12,8 @@ public interface IAdService
     Task<UserDetailModel?> GetUserDetailsAsync(string domain, string samAccountName);
     Task<CreateUserResponse> CreateUserAsync(ClaimsPrincipal callingUser, CreateUserRequest request);
     Task UpdateUserAsync(ClaimsPrincipal callingUser, UpdateUserRequest request);
-    Task<string> ResetPasswordAsync(UserActionRequest request);  
+    Task<string> ResetPasswordAsync(UserActionRequest request);
     Task UnlockAccountAsync(UserActionRequest request);
+    Task DisableAccountAsync(UserActionRequest request);
 }
 
