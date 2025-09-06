@@ -44,7 +44,9 @@ public class CreateUserRequest
     public string SamAccountName { get; set; } = string.Empty;
     public List<string>? OptionalGroups { get; set; }
     public bool CreateAdminAccount { get; set; }
-    public DateTime? AccountExpirationDate { get; set; }
+    
+    [Required]
+    public DateTime AccountExpirationDate { get; set; }
 }
 
 /// <summary>
@@ -58,7 +60,9 @@ public class UpdateUserRequest
     public string SamAccountName { get; set; } = string.Empty;
     public List<string>? OptionalGroups { get; set; }
     public bool ManageAdminAccount { get; set; }
-    public DateTime? AccountExpirationDate { get; set; }
+
+    [Required]
+    public DateTime AccountExpirationDate { get; set; }
 }
 
 #endregion
