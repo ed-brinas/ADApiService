@@ -24,24 +24,17 @@ public class UsersController : ControllerBase
     /// <summary>
     /// Retrieves a list of users from a specified domain, with optional filters.
     /// </summary>
-    /// <param name="domain">The domain to search in (e.g., "lab.local").</param>
-    /// <param name="nameFilter">A filter for the user's name or sAMAccountName.</param>
-    /// <param name="statusFilter">Filters users by their enabled/disabled status.</param>
-    /// <returns>A list of users matching the criteria.</returns>
     [HttpGet("list")]
     [ProducesResponseType(typeof(IEnumerable<UserListItem>), 200)]
-    public async Task<IActionResult> ListUsers([FromQuery] string domain, [FromQuery] string? nameFilter, [FromQuery] bool? statusFilter)
+    public async Task<IActionResult> ListUsers([FromQuery] string domain, [FromQuery] string? nameFilter, [FromQuery] bool? statusFilter, [FromQuery] bool? hasAdminAccount)
     {
-        var users = await _adService.ListUsersAsync(domain, nameFilter, statusFilter);
+        var users = await _adService.ListUsersAsync(domain, nameFilter, statusFilter, hasAdminAccount);
         return Ok(users);
     }
 
     /// <summary>
     /// Gets detailed information for a single user account.
     /// </summary>
-    /// <param name="domain">The domain of the user.</param>
-    /// <param name="samAccountName">The sAMAccountName of the user.</param>
-    /// <returns>Detailed information about the user.</returns>
     [HttpGet("details/{domain}/{samAccountName}")]
     [ProducesResponseType(typeof(UserDetailModel), 200)]
     [ProducesResponseType(typeof(ApiError), 404)]
@@ -58,7 +51,6 @@ public class UsersController : ControllerBase
     /// <summary>
     /// Creates a new standard or privileged user account.
     /// </summary>
-    /// <returns>Detailed information about the created account(s), including initial passwords.</returns>
     [HttpPost("create")]
     [ProducesResponseType(typeof(CreateUserResponse), 200)]
     [ProducesResponseType(typeof(ApiError), 400)]
@@ -126,7 +118,6 @@ public class UsersController : ControllerBase
     /// <summary>
     /// Resets a user's password to a new, randomly generated password.
     /// </summary>
-    /// <returns>The user's account name and the new password.</returns>
     [HttpPost("reset-password")]
     [ProducesResponseType(typeof(object), 200)]
     [ProducesResponseType(typeof(ApiError), 404)]
