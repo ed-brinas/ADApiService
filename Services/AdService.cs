@@ -64,7 +64,8 @@ public class AdService : IAdService
                                 SamAccountName = result.SamAccountName,
                                 EmailAddress = result.EmailAddress,
                                 Enabled = result.Enabled ?? false,
-                                HasAdminAccount = hasAdminAccount
+                                HasAdminAccount = hasAdminAccount,
+                                AccountExpirationDate = result.AccountExpirationDate
                             });
                         }
                     }
@@ -102,7 +103,8 @@ public class AdService : IAdService
                     DisplayName = user.DisplayName,
                     SamAccountName = user.SamAccountName,
                     HasAdminAccount = hasAdminAccount,
-                    MemberOf = memberOf!
+                    MemberOf = memberOf!,
+                    AccountExpirationDate = user.AccountExpirationDate
                 };
             }
             catch (Exception ex)
@@ -147,7 +149,8 @@ public class AdService : IAdService
                     UserPrincipalName = $"{request.SamAccountName}@{request.Domain}",
                     PasswordNotRequired = false,
                     UserCannotChangePassword = false,
-                    Enabled = true
+                    Enabled = true,
+                    AccountExpirationDate = request.AccountExpirationDate
                 };
                 user.SetPassword(generatedPassword);
                 user.Save();
@@ -204,6 +207,9 @@ public class AdService : IAdService
                     throw new KeyNotFoundException($"Update failed: User '{request.SamAccountName}' not found in domain '{request.Domain}'.");
                 }
                 
+                user.AccountExpirationDate = request.AccountExpirationDate;
+                user.Save();
+
                 UpdateGroupMembership(context, user, request.OptionalGroups ?? new List<string>());
 
                 var adminSam = $"{request.SamAccountName}-a";
@@ -302,6 +308,39 @@ public class AdService : IAdService
             catch (Exception ex)
             {
                 _logger.LogError(ex, "AD ERROR on UnlockAccountAsync for '{SamAccountName}'.", request.SamAccountName);
+                throw;
+            }
+        });
+    }
+
+    public async Task DisableAccountAsync(UserActionRequest request)
+    {
+        await Task.Run(() =>
+        {
+            try
+            {
+                using var context = new PrincipalContext(ContextType.Domain, request.Domain);
+                using var user = UserPrincipal.FindByIdentity(context, IdentityType.SamAccountName, request.SamAccountName);
+
+                if (user == null)
+                {
+                    throw new KeyNotFoundException($"Account disable failed: User '{request.SamAccountName}' not found in domain '{request.Domain}'.");
+                }
+
+                if (user.Enabled == true)
+                {
+                    user.Enabled = false;
+                    user.Save();
+                    _logger.LogInformation("Successfully disabled account for user '{SamAccountName}'.", request.SamAccountName);
+                }
+                else
+                {
+                    _logger.LogInformation("Account for user '{SamAccountName}' was already disabled.", request.SamAccountName);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "AD ERROR on DisableAccountAsync for '{SamAccountName}'.", request.SamAccountName);
                 throw;
             }
         });
@@ -496,7 +535,7 @@ public class AdService : IAdService
         }
 
         // 4. Add 2 lowercase letters to meet the 10-character minimum
-        for (int i = <strong>0</strong>; i < 2; i++)
+        for (int i = 0; i < 2; i++)
         {
             passwordChars.Add(lowerChars[random.Next(lowerChars.Length)]);
         }
