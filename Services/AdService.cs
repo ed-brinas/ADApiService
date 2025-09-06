@@ -22,11 +22,11 @@ public class AdService : IAdService
 
     #region User Listing and Details
 
-    public async Task<IEnumerable<UserListItem>> ListUsersAsync(string domain, string? nameFilter, bool? statusFilter)
+    public async Task<IEnumerable<UserListItem>> ListUsersAsync(string domain, string? nameFilter, bool? statusFilter, bool? hasAdminAccountFilter)
     {
         return await Task.Run(() =>
         {
-            var users = new List<UserListItem>();
+            var userDictionary = new Dictionary<string, UserListItem>();
             var domainDc = $"DC={domain.Replace(".", ",DC=")}";
 
             var relevantOus = _adSettings.Provisioning.SearchBaseOus
@@ -44,29 +44,49 @@ public class AdService : IAdService
                 try
                 {
                     using var context = new PrincipalContext(ContextType.Domain, domain, ou);
-                    using var userPrinc = new UserPrincipal(context);
                     
-                    if (!string.IsNullOrWhiteSpace(nameFilter)) { userPrinc.SamAccountName = $"*{nameFilter}*"; }
-                    if (statusFilter.HasValue) { userPrinc.Enabled = statusFilter; }
-
-                    using var searcher = new PrincipalSearcher(userPrinc);
-                    foreach (var result in searcher.FindAll().OfType<UserPrincipal>())
+                    var searchPrincipals = new List<UserPrincipal>();
+                    if (!string.IsNullOrWhiteSpace(nameFilter))
                     {
-                        using(result)
-                        {
-                             var adminSam = $"{result.SamAccountName}-a";
-                             using var domainContext = new PrincipalContext(ContextType.Domain, domain);
-                             var hasAdminAccount = UserPrincipal.FindByIdentity(domainContext, IdentityType.SamAccountName, adminSam) != null;
+                        // Add principals for each attribute to search
+                        searchPrincipals.Add(new UserPrincipal(context) { SamAccountName = $"*{nameFilter}*" });
+                        searchPrincipals.Add(new UserPrincipal(context) { DisplayName = $"*{nameFilter}*" });
+                        searchPrincipals.Add(new UserPrincipal(context) { EmailAddress = $"*{nameFilter}*" });
+                    }
+                    else
+                    {
+                        searchPrincipals.Add(new UserPrincipal(context)); // Empty filter for all users
+                    }
 
-                            users.Add(new UserListItem
+                    foreach(var userPrinc in searchPrincipals)
+                    {
+                        if (statusFilter.HasValue)
+                        {
+                            userPrinc.Enabled = statusFilter;
+                        }
+
+                        using var searcher = new PrincipalSearcher(userPrinc);
+                        foreach (var result in searcher.FindAll().OfType<UserPrincipal>())
+                        {
+                            using(result)
                             {
-                                DisplayName = result.DisplayName,
-                                SamAccountName = result.SamAccountName,
-                                EmailAddress = result.EmailAddress,
-                                Enabled = result.Enabled ?? false,
-                                HasAdminAccount = hasAdminAccount,
-                                AccountExpirationDate = result.AccountExpirationDate
-                            });
+                                if (result.SamAccountName != null && !userDictionary.ContainsKey(result.SamAccountName))
+                                {
+                                    var adminSam = $"{result.SamAccountName}-a";
+                                    using var domainContext = new PrincipalContext(ContextType.Domain, domain);
+                                    var hasAdminAccount = UserPrincipal.FindByIdentity(domainContext, IdentityType.SamAccountName, adminSam) != null;
+
+                                    userDictionary[result.SamAccountName] = new UserListItem
+                                    {
+                                        DisplayName = result.DisplayName,
+                                        SamAccountName = result.SamAccountName,
+                                        EmailAddress = result.EmailAddress,
+                                        Enabled = result.Enabled ?? false,
+                                        HasAdminAccount = hasAdminAccount,
+                                        AccountExpirationDate = result.AccountExpirationDate
+                                    };
+                                }
+                            }
                         }
                     }
                 }
@@ -75,7 +95,14 @@ public class AdService : IAdService
                     _logger.LogError(ex, "Error searching for users in OU '{OU}' for domain '{Domain}'.", ou, domain);
                 }
             }
-            return users.OrderBy(u => u.DisplayName);
+
+            IEnumerable<UserListItem> finalUsers = userDictionary.Values;
+            if (hasAdminAccountFilter.HasValue)
+            {
+                finalUsers = finalUsers.Where(u => u.HasAdminAccount == hasAdminAccountFilter.Value);
+            }
+
+            return finalUsers.OrderBy(u => u.DisplayName);
         });
     }
 
@@ -515,34 +542,13 @@ public class AdService : IAdService
         
         var random = new Random();
         var passwordChars = new List<char>();
-
-        // 1. Add exactly 3 uppercase letters
-        for (int i = 0; i < 3; i++)
-        {
-            passwordChars.Add(upperChars[random.Next(upperChars.Length)]);
-        }
-
-        // 2. Add exactly 3 numbers
-        for (int i = 0; i < 3; i++)
-        {
-            passwordChars.Add(numberChars[random.Next(numberChars.Length)]);
-        }
-
-        // 3. Add exactly 2 special characters
-        for (int i = 0; i < 2; i++)
-        {
-            passwordChars.Add(specialChars[random.Next(specialChars.Length)]);
-        }
-
-        // 4. Add 2 lowercase letters to meet the 10-character minimum
-        for (int i = 0; i < 2; i++)
-        {
-            passwordChars.Add(lowerChars[random.Next(lowerChars.Length)]);
-        }
-
-        // 5. Shuffle the characters to ensure randomness
-        var shuffledPassword = new string(passwordChars.OrderBy(x => random.Next()).ToArray());
         
+        for (int i = 0; i < 3; i++) { passwordChars.Add(upperChars[random.Next(upperChars.Length)]); }
+        for (int i = 0; i < 3; i++) { passwordChars.Add(numberChars[random.Next(numberChars.Length)]); }
+        for (int i = 0; i < 2; i++) { passwordChars.Add(specialChars[random.Next(specialChars.Length)]); }
+        for (int i = 0; i < 2; i++) { passwordChars.Add(lowerChars[random.Next(lowerChars.Length)]); }
+
+        var shuffledPassword = new string(passwordChars.OrderBy(x => random.Next()).ToArray());
         _logger.LogDebug("Generated new random password of length {Length}", shuffledPassword.Length);
         return shuffledPassword;
     }
