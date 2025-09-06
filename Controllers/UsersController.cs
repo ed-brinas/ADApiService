@@ -178,5 +178,30 @@ public class UsersController : ControllerBase
             return StatusCode(500, new ApiError("An unexpected server error occurred.", ex.Message));
         }
     }
+
+    /// <summary>
+    /// Disables a user's account.
+    /// </summary>
+    [HttpPost("disable")]
+    [ProducesResponseType(204)]
+    [ProducesResponseType(typeof(ApiError), 404)]
+    [ProducesResponseType(typeof(ApiError), 500)]
+    public async Task<IActionResult> DisableAccount([FromBody] UserActionRequest request)
+    {
+        try
+        {
+            await _adService.DisableAccountAsync(request);
+            return NoContent();
+        }
+        catch (KeyNotFoundException knfex)
+        {
+            return NotFound(new ApiError(knfex.Message));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error while disabling account for '{SamAccountName}'.", request.SamAccountName);
+            return StatusCode(500, new ApiError("An unexpected server error occurred.", ex.Message));
+        }
+    }
 }
 
