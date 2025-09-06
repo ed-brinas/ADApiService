@@ -48,7 +48,6 @@ public class AdService : IAdService
                     var searchPrincipals = new List<UserPrincipal>();
                     if (!string.IsNullOrWhiteSpace(nameFilter))
                     {
-                        // Add principals for each attribute to search
                         searchPrincipals.Add(new UserPrincipal(context) { SamAccountName = $"*{nameFilter}*" });
                         searchPrincipals.Add(new UserPrincipal(context) { DisplayName = $"*{nameFilter}*" });
                         searchPrincipals.Add(new UserPrincipal(context) { EmailAddress = $"*{nameFilter}*" });
@@ -542,7 +541,7 @@ public class AdService : IAdService
         
         var random = new Random();
         var passwordChars = new List<char>();
-        
+
         for (int i = 0; i < 3; i++) { passwordChars.Add(upperChars[random.Next(upperChars.Length)]); }
         for (int i = 0; i < 3; i++) { passwordChars.Add(numberChars[random.Next(numberChars.Length)]); }
         for (int i = 0; i < 2; i++) { passwordChars.Add(specialChars[random.Next(specialChars.Length)]); }
