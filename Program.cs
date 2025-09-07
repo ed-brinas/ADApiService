@@ -8,7 +8,6 @@ var MyAllowSpecificOrigins = "_myAllowSpecificOrigins";
 // Add services to the container.
 builder.Services.Configure<AdSettings>(builder.Configuration.GetSection("AdSettings"));
 
-// ** 1. Define the CORS policy **
 builder.Services.AddCors(options =>
 {
     options.AddPolicy(name: MyAllowSpecificOrigins,
@@ -35,12 +34,10 @@ builder.Services.AddAuthorization(options =>
 });
 
 
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new() { Title = "AD User Management API", Version = "v1" });
-    // This will use the XML comments from your controllers and models
     var xmlFile = $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml";
     var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
     c.IncludeXmlComments(xmlPath);
@@ -58,8 +55,25 @@ if (app.Environment.IsDevelopment())
 
 app.UseRouting();
 
-// ** 2. Apply the CORS policy **
-// This must be placed after UseRouting and before UseAuthentication/UseAuthorization
+// ** NEW: Middleware to handle anonymous preflight OPTIONS requests **
+// This intercepts the browser's preflight check before the authentication middleware can challenge it.
+app.Use(async (context, next) =>
+{
+    if (context.Request.Method == "OPTIONS")
+    {
+        // Set the necessary headers for the preflight response
+        context.Response.Headers.Append("Access-Control-Allow-Origin", "http://localhost:7000");
+        context.Response.Headers.Append("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+        context.Response.Headers.Append("Access-Control-Allow-Headers", "Content-Type, Authorization");
+        context.Response.Headers.Append("Access-Control-Allow-Credentials", "true");
+        context.Response.StatusCode = 204; // No Content
+        await context.Response.CompleteAsync();
+        return;
+    }
+    await next();
+});
+
+// Apply the main CORS policy for actual requests
 app.UseCors(MyAllowSpecificOrigins);
 
 app.UseAuthentication();
@@ -68,4 +82,3 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
-
