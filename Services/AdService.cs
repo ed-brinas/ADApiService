@@ -372,6 +372,39 @@ public class AdService : IAdService
         });
     }
 
+    public async Task EnableAccountAsync(UserActionRequest request)
+    {
+        await Task.Run(() =>
+        {
+            try
+            {
+                using var context = new PrincipalContext(ContextType.Domain, request.Domain);
+                using var user = UserPrincipal.FindByIdentity(context, IdentityType.SamAccountName, request.SamAccountName);
+
+                if (user == null)
+                {
+                    throw new KeyNotFoundException($"Account enable failed: User '{request.SamAccountName}' not found in domain '{request.Domain}'.");
+                }
+
+                if (user.Enabled == false)
+                {
+                    user.Enabled = true;
+                    user.Save();
+                    _logger.LogInformation("Successfully enabled account for user '{SamAccountName}'.", request.SamAccountName);
+                }
+                else
+                {
+                    _logger.LogInformation("Account for user '{SamAccountName}' was already enabled.", request.SamAccountName);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "AD ERROR on EnableAccountAsync for '{SamAccountName}'.", request.SamAccountName);
+                throw;
+            }
+        });
+    }
+
     #endregion
 
     #region Helper Methods
