@@ -8,7 +8,6 @@ var AllowSpecificOrigins = "_myAllowSpecificOrigins";
 // --- Service Configuration ---
 builder.Services.Configure<AdSettings>(builder.Configuration.GetSection("AdSettings"));
 
-// ** ADDED: CORS Policy Configuration **
 builder.Services.AddCors(options =>
 {
     options.AddPolicy(name: AllowSpecificOrigins,
@@ -52,10 +51,25 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+// ** NEW: Middleware to log the incoming request origin **
+app.Use((context, next) =>
+{
+    var origin = context.Request.Headers["Origin"].FirstOrDefault();
+    if (!string.IsNullOrEmpty(origin))
+    {
+        // Use the application's logger to print the origin to the console
+        app.Logger.LogInformation("--> Incoming request from Origin: {Origin}", origin);
+    }
+    else
+    {
+        app.Logger.LogInformation("--> Incoming request with no Origin header.");
+    }
+    return next();
+});
+
+
 app.UseRouting();
 
-// ** ADDED: Apply the CORS Policy **
-// This must be placed after UseRouting and before UseAuthentication/UseAuthorization
 app.UseCors(AllowSpecificOrigins);
 
 app.UseAuthentication();
