@@ -3,14 +3,15 @@ using ADApiService.Services;
 using Microsoft.AspNetCore.Authentication.Negotiate;
 
 var builder = WebApplication.CreateBuilder(args);
-var MyAllowSpecificOrigins = "_myAllowSpecificOrigins";
+var AllowSpecificOrigins = "_myAllowSpecificOrigins";
 
-// Add services to the container.
+// --- Service Configuration ---
 builder.Services.Configure<AdSettings>(builder.Configuration.GetSection("AdSettings"));
 
+// ** ADDED: CORS Policy Configuration **
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy(name: MyAllowSpecificOrigins,
+    options.AddPolicy(name: AllowSpecificOrigins,
                       policy =>
                       {
                           policy.WithOrigins("http://localhost:7000") // The origin of your ADWebPortal
@@ -23,9 +24,8 @@ builder.Services.AddCors(options =>
 builder.Services.AddControllers();
 builder.Services.AddScoped<IAdService, AdService>();
 
-builder.Services.AddAuthentication(NegotiateDefaults.AuthenticationScheme)
-    .AddNegotiate();
-
+// --- Authentication & Authorization ---
+builder.Services.AddAuthentication(NegotiateDefaults.AuthenticationScheme).AddNegotiate();
 builder.Services.AddAuthorization(options =>
 {
     options.FallbackPolicy = new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder()
@@ -33,7 +33,7 @@ builder.Services.AddAuthorization(options =>
         .Build();
 });
 
-
+// --- Swagger for API Documentation ---
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
@@ -43,10 +43,9 @@ builder.Services.AddSwaggerGen(c =>
     c.IncludeXmlComments(xmlPath);
 });
 
-
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
+// --- HTTP Request Pipeline ---
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -55,26 +54,9 @@ if (app.Environment.IsDevelopment())
 
 app.UseRouting();
 
-// ** NEW: Middleware to handle anonymous preflight OPTIONS requests **
-// This intercepts the browser's preflight check before the authentication middleware can challenge it.
-app.Use(async (context, next) =>
-{
-    if (context.Request.Method == "OPTIONS")
-    {
-        // Set the necessary headers for the preflight response
-        context.Response.Headers.Append("Access-Control-Allow-Origin", "http://localhost:7000");
-        context.Response.Headers.Append("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-        context.Response.Headers.Append("Access-Control-Allow-Headers", "Content-Type, Authorization");
-        context.Response.Headers.Append("Access-Control-Allow-Credentials", "true");
-        context.Response.StatusCode = 204; // No Content
-        await context.Response.CompleteAsync();
-        return;
-    }
-    await next();
-});
-
-// Apply the main CORS policy for actual requests
-app.UseCors(MyAllowSpecificOrigins);
+// ** ADDED: Apply the CORS Policy **
+// This must be placed after UseRouting and before UseAuthentication/UseAuthorization
+app.UseCors(AllowSpecificOrigins);
 
 app.UseAuthentication();
 app.UseAuthorization();
@@ -82,3 +64,4 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
+
