@@ -1,82 +1,66 @@
 using ADApiService.Models;
 using ADApiService.Services;
 using Microsoft.AspNetCore.Authentication.Negotiate;
-using Microsoft.OpenApi.Models;
-using System.Reflection;
 
 var builder = WebApplication.CreateBuilder(args);
+var MyAllowSpecificOrigins = "_myAllowSpecificOrigins";
 
-// --- 1. Service Configuration ---
-
-// Bind appsettings.json to the AdSettings class for strongly-typed configuration
+// Add services to the container.
 builder.Services.Configure<AdSettings>(builder.Configuration.GetSection("AdSettings"));
 
-builder.Services.AddControllers();
+// ** 1. Define the CORS policy **
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy(name: MyAllowSpecificOrigins,
+                      policy =>
+                      {
+                          policy.WithOrigins("http://localhost:7000") // The origin of your ADWebPortal
+                                .AllowAnyHeader()
+                                .AllowAnyMethod()
+                                .AllowCredentials(); // Required for Windows Authentication
+                      });
+});
 
-// Register the AdService for dependency injection
+builder.Services.AddControllers();
 builder.Services.AddScoped<IAdService, AdService>();
 
-// --- 2. Authentication & Authorization ---
-
-// Set up Windows Authentication (Kerberos/NTLM)
-builder.Services.AddAuthentication(NegotiateDefaults.AuthenticationScheme).AddNegotiate();
+builder.Services.AddAuthentication(NegotiateDefaults.AuthenticationScheme)
+    .AddNegotiate();
 
 builder.Services.AddAuthorization(options =>
 {
-    // Require an authenticated user for all endpoints by default
     options.FallbackPolicy = new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder()
         .RequireAuthenticatedUser()
         .Build();
 });
 
-// --- 3. API Documentation (Swagger) ---
 
+// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(options =>
+builder.Services.AddSwaggerGen(c =>
 {
-    options.SwaggerDoc("v1", new OpenApiInfo
-    {
-        Version = "v1",
-        Title = "Active Directory Management API",
-        Description = "A secure API for managing users in a multi-domain Active Directory forest."
-    });
-
-    // Include XML comments in Swagger UI
-    var xmlFilename = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
-    options.IncludeXmlComments(Path.Combine(AppContext.BaseDirectory, xmlFilename));
+    c.SwaggerDoc("v1", new() { Title = "AD User Management API", Version = "v1" });
+    // This will use the XML comments from your controllers and models
+    var xmlFile = $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml";
+    var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
+    c.IncludeXmlComments(xmlPath);
 });
 
-
-// --- 4. CORS Configuration ---
-
-var corsSettings = builder.Configuration.GetSection("Cors").Get<CorsSettings>() ?? new CorsSettings();
-builder.Services.AddCors(options =>
-{
-    options.AddDefaultPolicy(policy =>
-    {
-        policy.WithOrigins(corsSettings.AllowedOrigins.ToArray())
-              .AllowAnyHeader()
-              .AllowAnyMethod()
-              .AllowCredentials(); // Required for Windows Authentication
-    });
-});
-
-
-// --- 5. Build the Application ---
 
 var app = builder.Build();
 
-// --- 6. Middleware Pipeline ---
-
+// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
-    app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "AD Management API v1"));
-    // Add developer exception page for detailed errors in development
-    app.UseDeveloperExceptionPage();
+    app.UseSwaggerUI();
 }
 
-app.UseCors();
+app.UseRouting();
+
+// ** 2. Apply the CORS policy **
+// This must be placed after UseRouting and before UseAuthentication/UseAuthorization
+app.UseCors(MyAllowSpecificOrigins);
 
 app.UseAuthentication();
 app.UseAuthorization();
@@ -84,10 +68,4 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
-
-// Helper class for CORS settings
-public class CorsSettings
-{
-    public List<string> AllowedOrigins { get; set; } = new();
-}
 
