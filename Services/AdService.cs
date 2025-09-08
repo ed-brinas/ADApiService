@@ -48,6 +48,7 @@ public class AdService : IAdService
                     var searchPrincipals = new List<UserPrincipal>();
                     if (!string.IsNullOrWhiteSpace(nameFilter))
                     {
+                        // Add principals for each attribute to search
                         searchPrincipals.Add(new UserPrincipal(context) { SamAccountName = $"*{nameFilter}*" });
                         searchPrincipals.Add(new UserPrincipal(context) { DisplayName = $"*{nameFilter}*" });
                         searchPrincipals.Add(new UserPrincipal(context) { EmailAddress = $"*{nameFilter}*" });
@@ -324,6 +325,7 @@ public class AdService : IAdService
                 if(user.IsAccountLockedOut())
                 {
                     user.UnlockAccount();
+                    user.Save(); // COMMIT THE CHANGE TO ACTIVE DIRECTORY
                     _logger.LogInformation("Successfully unlocked account for user '{SamAccountName}'.", request.SamAccountName);
                 }
                 else
@@ -371,7 +373,7 @@ public class AdService : IAdService
             }
         });
     }
-
+    
     public async Task EnableAccountAsync(UserActionRequest request)
     {
         await Task.Run(() =>
@@ -587,3 +589,4 @@ public class AdService : IAdService
 
     #endregion
 }
+
