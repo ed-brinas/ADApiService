@@ -194,5 +194,30 @@ public class UsersController : ControllerBase
             return StatusCode(500, new ApiError("An unexpected server error occurred.", ex.Message));
         }
     }
+    
+    /// <summary>
+    /// Enables a user's account.
+    /// </summary>
+    [HttpPost("enable")]
+    [ProducesResponseType(204)]
+    [ProducesResponseType(typeof(ApiError), 404)]
+    [ProducesResponseType(typeof(ApiError), 500)]
+    public async Task<IActionResult> EnableAccount([FromBody] UserActionRequest request)
+    {
+        try
+        {
+            await _adService.EnableAccountAsync(request);
+            return NoContent();
+        }
+        catch (KeyNotFoundException knfex)
+        {
+            return NotFound(new ApiError(knfex.Message));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error while enabling account for '{SamAccountName}'.", request.SamAccountName);
+            return StatusCode(500, new ApiError("An unexpected server error occurred.", ex.Message));
+        }
+    }
 }
 
