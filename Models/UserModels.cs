@@ -24,29 +24,11 @@ public class UserDetailModel
 {
     public string DisplayName { get; set; } = string.Empty;
     public string SamAccountName { get; set; } = string.Empty;
+    public string? FirstName { get; set; }
+    public string? LastName { get; set; }
     public bool HasAdminAccount { get; set; }
     public List<string> MemberOf { get; set; } = new();
     public DateTime? AccountExpirationDate { get; set; }
-}
-
-/// <summary>
-/// Defines the data required to create a new user account. The password will be generated automatically.
-/// </summary>
-public class CreateUserRequest
-{
-    [Required]
-    public string Domain { get; set; } = string.Empty;
-    [Required]
-    public string FirstName { get; set; } = string.Empty;
-    [Required]
-    public string LastName { get; set; } = string.Empty;
-    [Required]
-    public string SamAccountName { get; set; } = string.Empty;
-    public List<string>? OptionalGroups { get; set; }
-    public bool CreateAdminAccount { get; set; }
-    
-    [Required]
-    public DateTime AccountExpirationDate { get; set; }
 }
 
 /// <summary>
@@ -58,9 +40,12 @@ public class UpdateUserRequest
     public string Domain { get; set; } = string.Empty;
     [Required]
     public string SamAccountName { get; set; } = string.Empty;
+    [Required]
+    public string FirstName { get; set; } = string.Empty;
+    [Required]
+    public string LastName { get; set; } = string.Empty;
     public List<string>? OptionalGroups { get; set; }
     public bool ManageAdminAccount { get; set; }
-
     [Required]
     public DateTime AccountExpirationDate { get; set; }
 }
@@ -68,6 +53,7 @@ public class UpdateUserRequest
 #endregion
 
 #region Existing Models (Unchanged)
+public class CreateUserRequest { [Required] public string Domain { get; set; } = string.Empty; [Required] public string FirstName { get; set; } = string.Empty; [Required] public string LastName { get; set; } = string.Empty; [Required] public string SamAccountName { get; set; } = string.Empty; public List<string>? OptionalGroups { get; set; } public bool CreateAdminAccount { get; set; } [Required] public DateTime AccountExpirationDate { get; set; } }
 public class CreateUserResponse { public string Message { get; set; } = string.Empty; public UserAccountDetails? UserAccount { get; set; } public AdminAccountDetails? AdminAccount { get; set; } public List<string> GroupsAssociated { get; set; } = new(); }
 public class UserAccountDetails { public string SamAccountName { get; set; } = string.Empty; public string DisplayName { get; set; } = string.Empty; public string UserPrincipalName { get; set; } = string.Empty; public string InitialPassword { get; set; } = string.Empty; }
 public class AdminAccountDetails { public string SamAccountName { get; set; } = string.Empty; public string DisplayName { get; set; } = string.Empty; public string UserPrincipalName { get; set; } = string.Empty; public string InitialPassword { get; set; } = string.Empty; }
