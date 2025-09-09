@@ -196,7 +196,7 @@ public class AdService : IAdService
 
                 if (IsUserHighPrivilege(callingUser) && request.OptionalGroups?.Any() == true)
                 {
-                    AddUserToGroups(user, request.OptionalGroups);
+                    AddUserToGroups(user, request.OptionalGroups, request.Domain);
                     response.GroupsAssociated.AddRange(request.OptionalGroups);
                 }
 
@@ -243,7 +243,7 @@ public class AdService : IAdService
                 user.AccountExpirationDate = request.AccountExpirationDate;
                 user.Save();
 
-                UpdateGroupMembership(context, user, request.OptionalGroups ?? new List<string>());
+                UpdateGroupMembership(context, user, request.OptionalGroups ?? new List<string>(), request.Domain);
 
                 var adminSam = $"{request.SamAccountName}-a";
                 using var adminUser = UserPrincipal.FindByIdentity(context, IdentityType.SamAccountName, adminSam);
@@ -527,7 +527,7 @@ public class AdService : IAdService
         adminUser.ExpirePasswordNow();
         adminUser.Save();
 
-        AddUserToGroups(adminUser, [_adSettings.Provisioning.AdminGroup]);
+        AddUserToGroups(adminUser, [_adSettings.Provisioning.AdminGroup], request.Domain);
         _logger.LogInformation("Successfully created and configured admin account '{AdminSam}'.", adminSam);
 
         return new AdminAccountDetails
@@ -570,7 +570,7 @@ public class AdService : IAdService
         }
     }
 
-    private void UpdateGroupMembership(PrincipalContext context, UserPrincipal user, List<string> targetGroupNames)
+    private void UpdateGroupMembership(PrincipalContext context, UserPrincipal user, List<string> targetGroupNames, string domain)
     {
         var allowedOptionalGroups = _adSettings.Provisioning.OptionalGroupsForHighPrivilege
             .Select(g => g.ToLowerInvariant())
@@ -582,7 +582,7 @@ public class AdService : IAdService
             .ToList();
 
         var groupsToAdd = targetGroupNames.Except(currentGroupNames!, StringComparer.OrdinalIgnoreCase);
-        AddUserToGroups(user, groupsToAdd.ToList());
+        AddUserToGroups(user, groupsToAdd.ToList(), domain);
 
         var groupsToRemove = currentGroupNames!.Except(targetGroupNames, StringComparer.OrdinalIgnoreCase);
         foreach (var groupName in groupsToRemove)
