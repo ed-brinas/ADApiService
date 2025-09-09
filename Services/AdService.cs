@@ -106,7 +106,7 @@ public class AdService : IAdService
         });
     }
 
-    public async Task<UserDetailModel?> GetUserDetailsAsync(string domain, string samAccountName)
+    public async Task<UserDetailModel?> GetUserDetailsAsync(ClaimsPrincipal callingUser, string domain, string samAccountName)
     {
         return await Task.Run(() =>
         {
@@ -124,16 +124,20 @@ public class AdService : IAdService
                 var adminSam = $"{user.SamAccountName}-a";
                 var hasAdminAccount = UserPrincipal.FindByIdentity(context, IdentityType.SamAccountName, adminSam) != null;
                 var memberOf = user.GetGroups().Select(g => g.SamAccountName).Where(s => s != null).ToList();
-        
+
+                // New logic for the feature flag
+                var canReset = IsUserHighPrivilege(callingUser) && hasAdminAccount;
+
                 return new UserDetailModel
                 {
                     DisplayName = user.DisplayName,
                     SamAccountName = user.SamAccountName,
-                    FirstName = user.GivenName, // Add this line
-                    LastName = user.Surname,   // Add this line
+                    FirstName = user.GivenName,
+                    LastName = user.Surname,
                     HasAdminAccount = hasAdminAccount,
                     MemberOf = memberOf!,
-                    AccountExpirationDate = user.AccountExpirationDate
+                    AccountExpirationDate = user.AccountExpirationDate,
+                    CanAutoResetPassword = canReset
                 };
             }
             catch (Exception ex)
@@ -196,14 +200,13 @@ public class AdService : IAdService
 
                 if (IsUserHighPrivilege(callingUser) && request.OptionalGroups?.Any() == true)
                 {
-                    //AddUserToGroups(user, request.OptionalGroups, request.Domain);
-                    //response.GroupsAssociated.AddRange(request.OptionalGroups);
-                    response.AdminAccount = CreateAssociatedAdminAccount(request, request.OptionalGroups);
+                    AddUserToGroups(user, request.OptionalGroups, request.Domain);
+                    response.GroupsAssociated.AddRange(request.OptionalGroups);
                 }
 
                 if (IsUserHighPrivilege(callingUser) && request.CreateAdminAccount)
                 {
-                    response.AdminAccount = CreateAssociatedAdminAccount(request);
+                    response.AdminAccount = CreateAssociatedAdminAccount(request, request.OptionalGroups);
                 }
                 
                 response.Message = $"Successfully created user '{request.SamAccountName}'.";
@@ -237,7 +240,6 @@ public class AdService : IAdService
                     throw new KeyNotFoundException($"Update failed: User '{request.SamAccountName}' not found in domain '{request.Domain}'.");
                 }
                 
-                // FIX: Add these lines to update the name properties
                 user.GivenName = request.FirstName;
                 user.Surname = request.LastName;
                 user.DisplayName = $"{request.FirstName} {request.LastName}";
@@ -259,7 +261,7 @@ public class AdService : IAdService
                             FirstName = user.GivenName ?? "Admin",
                             LastName = user.Surname ?? user.SamAccountName,
                             SamAccountName = user.SamAccountName,
-                        }, request.OptionalGroups); // Pass the optional groups from the update request
+                        }, request.OptionalGroups);
                     }
                 }
                 else
@@ -322,7 +324,7 @@ public class AdService : IAdService
             _logger.LogWarning("SECURITY: User '{User}' without high-privilege rights attempted to reset an admin password for '{TargetUser}'.", callingUser.Identity?.Name, request.SamAccountName);
             throw new InvalidOperationException("You do not have permission to perform this action.");
         }
-    
+
         return await Task.Run(() =>
         {
             try
@@ -332,17 +334,15 @@ public class AdService : IAdService
                 
                 var adminSam = $"{request.SamAccountName}-a";
                 using var user = UserPrincipal.FindByIdentity(context, IdentityType.SamAccountName, adminSam);
-    
+
                 if (user == null)
                 {
                     throw new KeyNotFoundException($"Admin account reset failed: User '{adminSam}' not found in the admin OU for domain '{request.Domain}'. The account may exist in a different OU or not at all.");
                 }
-    
-                // At this point, we know the user was found in the correct OU specified in the PrincipalContext
+
                 var newPassword = GenerateRandomPassword();
                 user.SetPassword(newPassword);
-                //user.ExpirePasswordNow();
-                user.UnlockAccount();
+                //user.UnlockAccount();
                 user.Save();
                 
                 _logger.LogInformation("Successfully reset password for admin account '{AdminSam}'.", adminSam);
@@ -373,7 +373,7 @@ public class AdService : IAdService
                 if(user.IsAccountLockedOut())
                 {
                     user.UnlockAccount();
-                    user.Save(); // COMMIT THE CHANGE TO ACTIVE DIRECTORY
+                    user.Save();
                     _logger.LogInformation("Successfully unlocked account for user '{SamAccountName}'.", request.SamAccountName);
                 }
                 else
@@ -505,7 +505,7 @@ public class AdService : IAdService
         return groupNames;
     }
 
-    private AdminAccountDetails CreateAssociatedAdminAccount(CreateUserRequest request)
+    private AdminAccountDetails CreateAssociatedAdminAccount(CreateUserRequest request, List<string>? groupsToAssign = null)
     {
         var adminOu = GetOuForDomain(_adSettings.Provisioning.AdminUserOuFormat, request.Domain);
         using var context = new PrincipalContext(ContextType.Domain, request.Domain, adminOu);
@@ -525,14 +525,12 @@ public class AdService : IAdService
         };
         adminUser.SetPassword(generatedPassword);
         adminUser.Save();
-        //adminUser.ExpirePasswordNow();
-        adminUser.Save();
 
-        //AddUserToGroups(adminUser, [_adSettings.Provisioning.AdminGroup], request.Domain);
         if (groupsToAssign?.Any() == true)
         {
             AddUserToGroups(adminUser, groupsToAssign, request.Domain);
-        }        
+        }
+
         _logger.LogInformation("Successfully created and configured admin account '{AdminSam}'.", adminSam);
 
         return new AdminAccountDetails
@@ -550,7 +548,6 @@ public class AdService : IAdService
         {
             try
             {
-                // The search is now restricted to the single domain passed into the method
                 using var context = new PrincipalContext(ContextType.Domain, domain);
                 using var group = GroupPrincipal.FindByIdentity(context, IdentityType.SamAccountName, groupName);
                 
@@ -570,7 +567,7 @@ public class AdService : IAdService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error while trying to add user '{User}' to group '{Group}' in domain '{Domain}'.", user.SamAccountName, groupName, domain);
+                 _logger.LogError(ex, "Error while trying to add user '{User}' to group '{Group}' in domain '{Domain}'.", user.SamAccountName, groupName, domain);
             }
         }
     }
@@ -620,7 +617,7 @@ public class AdService : IAdService
         const string upperChars = "ABCDEFGHJKLMNPQRSTUVWXYZ";
         const string lowerChars = "abcdefghijkmnpqrstuvwxyz";
         const string numberChars = "123456789";
-        const string specialChars = "!@#$%^&{}[]_-";
+        const string specialChars = "!$&@!$&@";
         
         var random = new Random();
         var passwordChars = new List<char>();
@@ -637,4 +634,3 @@ public class AdService : IAdService
 
     #endregion
 }
-
