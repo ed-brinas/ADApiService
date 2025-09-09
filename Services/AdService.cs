@@ -526,6 +526,21 @@ public class AdService : IAdService
         adminUser.SetPassword(generatedPassword);
         adminUser.Save();
 
+        try
+        {
+            using var group = GroupPrincipal.FindByIdentity(context, "Domain Users");
+            if (group != null && group.Members.Contains(adminUser))
+            {
+                group.Members.Remove(adminUser);
+                group.Save();
+                _logger.LogInformation("Removed admin user '{AdminSam}' from the 'Domain Users' group.", adminSam);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Could not remove admin user '{AdminSam}' from 'Domain Users' group.", adminSam);
+        }
+
         if (groupsToAssign?.Any() == true)
         {
             AddUserToGroups(adminUser, groupsToAssign, request.Domain);
