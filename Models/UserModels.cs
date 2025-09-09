@@ -29,6 +29,7 @@ public class UserDetailModel
     public bool HasAdminAccount { get; set; }
     public List<string> MemberOf { get; set; } = new();
     public DateTime? AccountExpirationDate { get; set; }
+    public bool CanAutoResetPassword { get; set; }
 }
 
 /// <summary>
