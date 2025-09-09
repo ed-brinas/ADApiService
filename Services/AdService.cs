@@ -124,7 +124,6 @@ public class AdService : IAdService
                 var adminSam = $"{user.SamAccountName}-a";
                 var hasAdminAccount = UserPrincipal.FindByIdentity(context, IdentityType.SamAccountName, adminSam) != null;
                 var memberOf = user.GetGroups().Select(g => g.SamAccountName).Where(s => s != null).ToList();
-                var canReset = IsUserHighPrivilege(callingUser) && hasAdminAccount;
         
                 return new UserDetailModel
                 {
