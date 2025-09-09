@@ -50,6 +50,17 @@ public class UpdateUserRequest
     public DateTime AccountExpirationDate { get; set; }
 }
 
+/// <summary>
+/// Defines the data required to reset an admin (-a) account's password.
+/// </summary>
+public class ResetAdminPasswordRequest
+{
+    [Required]
+    public string Domain { get; set; } = string.Empty;
+    [Required]
+    public string SamAccountName { get; set; } = string.Empty;
+}
+
 #endregion
 
 #region Existing Models (Unchanged)
