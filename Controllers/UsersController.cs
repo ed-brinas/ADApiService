@@ -145,6 +145,41 @@ public class UsersController : ControllerBase
         }
     }
 
+    // Add this new method to UsersController.cs
+    /// <summary>
+    /// Resets the password for an associated admin account (-a account).
+    /// </summary>
+    /// <remarks>
+    /// This is a high-privilege operation and is restricted to authorized users.
+    /// The target account must reside in the configured Admin OU.
+    /// </remarks>
+    [HttpPost("reset-admin-password")]
+    [ProducesResponseType(typeof(object), 200)]
+    [ProducesResponseType(typeof(ApiError), 401)]
+    [ProducesResponseType(typeof(ApiError), 404)]
+    [ProducesResponseType(typeof(ApiError), 500)]
+    public async Task<IActionResult> ResetAdminPassword([FromBody] ResetAdminPasswordRequest request)
+    {
+        try
+        {
+            var newPassword = await _adService.ResetAdminPasswordAsync(User, request);
+            return Ok(new { SamAccountName = $"{request.SamAccountName}-a", NewPassword = newPassword });
+        }
+        catch (InvalidOperationException ioex)
+        {
+            return Unauthorized(new ApiError("Permission denied.", ioex.Message));
+        }
+        catch (KeyNotFoundException knfex)
+        {
+            return NotFound(new ApiError(knfex.Message));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error while resetting admin password for '{SamAccountName}'.", request.SamAccountName);
+            return StatusCode(500, new ApiError("An unexpected server error occurred.", ex.Message));
+        }
+    }
+
     /// <summary>
     /// Unlocks a user's account if it is locked out.
     /// </summary>
