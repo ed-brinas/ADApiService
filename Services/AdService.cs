@@ -129,6 +129,8 @@ public class AdService : IAdService
                 {
                     DisplayName = user.DisplayName,
                     SamAccountName = user.SamAccountName,
+                    FirstName = user.GivenName, // Add this line
+                    LastName = user.Surname,   // Add this line
                     HasAdminAccount = hasAdminAccount,
                     MemberOf = memberOf!,
                     AccountExpirationDate = user.AccountExpirationDate
