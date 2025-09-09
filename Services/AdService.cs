@@ -314,6 +314,47 @@ public class AdService : IAdService
         });
     }
 
+    public async Task<string> ResetAdminPasswordAsync(ClaimsPrincipal callingUser, ResetAdminPasswordRequest request)
+    {
+        if (!IsUserHighPrivilege(callingUser))
+        {
+            _logger.LogWarning("SECURITY: User '{User}' without high-privilege rights attempted to reset an admin password for '{TargetUser}'.", callingUser.Identity?.Name, request.SamAccountName);
+            throw new InvalidOperationException("You do not have permission to perform this action.");
+        }
+    
+        return await Task.Run(() =>
+        {
+            try
+            {
+                var adminOu = GetOuForDomain(_adSettings.Provisioning.AdminUserOuFormat, request.Domain);
+                using var context = new PrincipalContext(ContextType.Domain, request.Domain, adminOu);
+                
+                var adminSam = $"{request.SamAccountName}-a";
+                using var user = UserPrincipal.FindByIdentity(context, IdentityType.SamAccountName, adminSam);
+    
+                if (user == null)
+                {
+                    throw new KeyNotFoundException($"Admin account reset failed: User '{adminSam}' not found in the admin OU for domain '{request.Domain}'. The account may exist in a different OU or not at all.");
+                }
+    
+                // At this point, we know the user was found in the correct OU specified in the PrincipalContext
+                var newPassword = GenerateRandomPassword();
+                user.SetPassword(newPassword);
+                user.ExpirePasswordNow();
+                user.UnlockAccount();
+                user.Save();
+                
+                _logger.LogInformation("Successfully reset password for admin account '{AdminSam}'.", adminSam);
+                return newPassword;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "AD ERROR on ResetAdminPasswordAsync for '{SamAccountName}'.", request.SamAccountName);
+                throw;
+            }
+        });
+    }
+
     public async Task UnlockAccountAsync(UserActionRequest request)
     {
         await Task.Run(() =>
@@ -575,10 +616,10 @@ public class AdService : IAdService
     
     private string GenerateRandomPassword()
     {
-        const string upperChars = "ABCDEFGHJKLMNOPQRSTUVWXYZ";
-        const string lowerChars = "abcdefghijkmnopqrstuvwxyz";
-        const string numberChars = "0123456789";
-        const string specialChars = "!@#$%^&*?_-";
+        const string upperChars = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+        const string lowerChars = "abcdefghijkmnpqrstuvwxyz";
+        const string numberChars = "123456789";
+        const string specialChars = "!@#$%^&{}[]_-";
         
         var random = new Random();
         var passwordChars = new List<char>();
