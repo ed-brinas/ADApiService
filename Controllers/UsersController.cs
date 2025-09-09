@@ -39,8 +39,8 @@ public class UsersController : ControllerBase
     [ProducesResponseType(typeof(UserDetailModel), 200)]
     [ProducesResponseType(typeof(ApiError), 404)]
     public async Task<IActionResult> GetUserDetails(string domain, string samAccountName)
-    {
-        var userDetails = await _adService.GetUserDetailsAsync(domain, samAccountName);
+    {    
+        var userDetails = await _adService.GetUserDetailsAsync(User, domain, samAccountName);
         if (userDetails == null)
         {
             return NotFound(new ApiError($"User '{samAccountName}' not found in domain '{domain}'."));
