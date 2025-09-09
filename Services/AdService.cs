@@ -234,6 +234,10 @@ public class AdService : IAdService
                     throw new KeyNotFoundException($"Update failed: User '{request.SamAccountName}' not found in domain '{request.Domain}'.");
                 }
                 
+                // FIX: Add these lines to update the name properties
+                user.GivenName = request.FirstName;
+                user.Surname = request.LastName;
+                user.DisplayName = $"{request.FirstName} {request.LastName}";
                 user.AccountExpirationDate = request.AccountExpirationDate;
                 user.Save();
 
