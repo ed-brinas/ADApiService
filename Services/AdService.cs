@@ -539,37 +539,33 @@ public class AdService : IAdService
         };
     }
     
-    private void AddUserToGroups(UserPrincipal user, List<string> groupNames)
+    private void AddUserToGroups(UserPrincipal user, List<string> groupNames, string domain)
     {
         foreach (var groupName in groupNames.Where(g => !string.IsNullOrWhiteSpace(g)))
         {
-            GroupPrincipal? group = null;
-            foreach(var domain in _adSettings.Domains)
+            try
             {
-                try 
+                // The search is now restricted to the single domain passed into the method
+                using var context = new PrincipalContext(ContextType.Domain, domain);
+                using var group = GroupPrincipal.FindByIdentity(context, IdentityType.SamAccountName, groupName);
+                
+                if (group != null)
                 {
-                    using var context = new PrincipalContext(ContextType.Domain, domain);
-                    group = GroupPrincipal.FindByIdentity(context, IdentityType.SamAccountName, groupName);
-                    if (group != null)
+                    if (!group.Members.Contains(user))
                     {
-                        if (!group.Members.Contains(user))
-                        {
-                            group.Members.Add(user);
-                            group.Save();
-                            _logger.LogInformation("Added user '{User}' to group '{Group}' found in domain '{Domain}'.", user.SamAccountName, groupName, domain);
-                        }
-                        break; 
+                        group.Members.Add(user);
+                        group.Save();
+                        _logger.LogInformation("Added user '{User}' to group '{Group}' in domain '{Domain}'.", user.SamAccountName, groupName, domain);
                     }
                 }
-                catch (Exception ex)
+                else
                 {
-                     _logger.LogError(ex, "Error while trying to add user '{User}' to group '{Group}' in domain '{Domain}'.", user.SamAccountName, groupName, domain);
+                    _logger.LogWarning("Could not find group '{Group}' in domain '{Domain}' to add user '{User}'.", groupName, domain, user.SamAccountName);
                 }
             }
-
-            if (group == null)
+            catch (Exception ex)
             {
-                _logger.LogWarning("Could not find group '{Group}' in any configured domain to add user '{User}'.", groupName, user.SamAccountName);
+                _logger.LogError(ex, "Error while trying to add user '{User}' to group '{Group}' in domain '{Domain}'.", user.SamAccountName, groupName, domain);
             }
         }
     }
