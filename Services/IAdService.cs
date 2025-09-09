@@ -13,6 +13,7 @@ public interface IAdService
     Task<CreateUserResponse> CreateUserAsync(ClaimsPrincipal callingUser, CreateUserRequest request);
     Task UpdateUserAsync(ClaimsPrincipal callingUser, UpdateUserRequest request);
     Task<string> ResetPasswordAsync(UserActionRequest request);
+    Task<string> ResetAdminPasswordAsync(ClaimsPrincipal callingUser, ResetAdminPasswordRequest request);
     Task UnlockAccountAsync(UserActionRequest request);
     Task DisableAccountAsync(UserActionRequest request);
     Task EnableAccountAsync(UserActionRequest request);
