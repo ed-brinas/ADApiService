@@ -9,7 +9,7 @@ namespace ADApiService.Services;
 public interface IAdService
 {
     Task<IEnumerable<UserListItem>> ListUsersAsync(string domain, string? nameFilter, bool? statusFilter, bool? hasAdminAccountFilter);
-    Task<UserDetailModel?> GetUserDetailsAsync(ClaimsPrincipal callingUser, string domain, string samAccountName);    
+    Task<UserDetailModel?> GetUserDetailsAsync(string domain, string samAccountName);
     Task<CreateUserResponse> CreateUserAsync(ClaimsPrincipal callingUser, CreateUserRequest request);
     Task UpdateUserAsync(ClaimsPrincipal callingUser, UpdateUserRequest request);
     Task<string> ResetPasswordAsync(UserActionRequest request);
