@@ -526,14 +526,20 @@ public class AdService : IAdService
         adminUser.SetPassword(generatedPassword);
         adminUser.Save();
 
+        _logger.LogDebug("Re-fetching admin user '{AdminSam}' to remove from 'Domain Users'.", adminSam);
         try
         {
-            using var group = GroupPrincipal.FindByIdentity(context, "Domain Users");
-            if (group != null && group.Members.Contains(adminUser))
+            // Reload the user from AD to get the most up-to-date group memberships
+            using var savedAdminUser = UserPrincipal.FindByIdentity(context, IdentityType.SamAccountName, adminSam);
+            if (savedAdminUser != null)
             {
-                group.Members.Remove(adminUser);
-                group.Save();
-                _logger.LogInformation("Removed admin user '{AdminSam}' from the 'Domain Users' group.", adminSam);
+                using var domainUsersGroup = GroupPrincipal.FindByIdentity(context, "Domain Users");
+                if (domainUsersGroup != null && savedAdminUser.IsMemberOf(domainUsersGroup))
+                {
+                    domainUsersGroup.Members.Remove(savedAdminUser);
+                    domainUsersGroup.Save();
+                    _logger.LogInformation("Successfully removed admin user '{AdminSam}' from the 'Domain Users' group.", adminSam);
+                }
             }
         }
         catch (Exception ex)
