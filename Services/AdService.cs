@@ -196,8 +196,9 @@ public class AdService : IAdService
 
                 if (IsUserHighPrivilege(callingUser) && request.OptionalGroups?.Any() == true)
                 {
-                    AddUserToGroups(user, request.OptionalGroups, request.Domain);
-                    response.GroupsAssociated.AddRange(request.OptionalGroups);
+                    //AddUserToGroups(user, request.OptionalGroups, request.Domain);
+                    //response.GroupsAssociated.AddRange(request.OptionalGroups);
+                    response.AdminAccount = CreateAssociatedAdminAccount(request, request.OptionalGroups);
                 }
 
                 if (IsUserHighPrivilege(callingUser) && request.CreateAdminAccount)
@@ -258,7 +259,7 @@ public class AdService : IAdService
                             FirstName = user.GivenName ?? "Admin",
                             LastName = user.Surname ?? user.SamAccountName,
                             SamAccountName = user.SamAccountName,
-                        });
+                        }, request.OptionalGroups); // Pass the optional groups from the update request
                     }
                 }
                 else
@@ -340,7 +341,7 @@ public class AdService : IAdService
                 // At this point, we know the user was found in the correct OU specified in the PrincipalContext
                 var newPassword = GenerateRandomPassword();
                 user.SetPassword(newPassword);
-                user.ExpirePasswordNow();
+                //user.ExpirePasswordNow();
                 user.UnlockAccount();
                 user.Save();
                 
@@ -524,10 +525,14 @@ public class AdService : IAdService
         };
         adminUser.SetPassword(generatedPassword);
         adminUser.Save();
-        adminUser.ExpirePasswordNow();
+        //adminUser.ExpirePasswordNow();
         adminUser.Save();
 
-        AddUserToGroups(adminUser, [_adSettings.Provisioning.AdminGroup], request.Domain);
+        //AddUserToGroups(adminUser, [_adSettings.Provisioning.AdminGroup], request.Domain);
+        if (groupsToAssign?.Any() == true)
+        {
+            AddUserToGroups(adminUser, groupsToAssign, request.Domain);
+        }        
         _logger.LogInformation("Successfully created and configured admin account '{AdminSam}'.", adminSam);
 
         return new AdminAccountDetails
