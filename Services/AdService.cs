@@ -528,21 +528,16 @@ public class AdService : IAdService
         };
         adminUser.SetPassword(generatedPassword);
     
-        // --- Start of New, More Reliable Logic ---
+        // --- Start of Reverted, More Reliable Logic ---
         if (groupsToAssign?.Any(g => !string.IsNullOrWhiteSpace(g)) == true)
         {
             var firstGroupName = groupsToAssign.First(g => !string.IsNullOrWhiteSpace(g));
             try
             {
-                // NEW: Explicitly qualify the group name with the domain
-                var qualifiedGroupName = $"{request.Domain}\\{firstGroupName}";
-                _logger.LogInformation("Attempting to find primary group using qualified name: '{QualifiedName}'", qualifiedGroupName);
-        
-                // Use the qualified name to find the group
-                using var primaryGroup = GroupPrincipal.FindByIdentity(context, qualifiedGroupName);
-        
+                using var primaryGroup = GroupPrincipal.FindByIdentity(context, firstGroupName);
                 if (primaryGroup != null && primaryGroup.IsSecurityGroup == true && primaryGroup.GroupScope == GroupScope.Global)
                 {
+                    // Set the primary group BEFORE saving the user
                     var userEntry = (System.DirectoryServices.DirectoryEntry)adminUser.GetUnderlyingObject();
                     var rid = primaryGroup.Sid.Value.Substring(primaryGroup.Sid.Value.LastIndexOf('-') + 1);
                     userEntry.Properties["primaryGroupID"].Value = rid;
@@ -550,7 +545,7 @@ public class AdService : IAdService
                 }
                 else
                 {
-                     _logger.LogWarning("Cannot set primary group for '{AdminSam}'. Group '{Group}' could not be found or is not a Global Security Group.", adminSam, firstGroupName);
+                     _logger.LogWarning("Cannot set primary group for '{AdminSam}'. Group '{Group}' is not a Global Security Group.", adminSam, firstGroupName);
                 }
             }
             catch (Exception ex)
@@ -581,7 +576,7 @@ public class AdService : IAdService
         {
             _logger.LogError(ex, "Failed to remove admin user '{AdminSam}' from 'Domain Users' group.", adminSam);
         }
-        // --- End of New Logic ---
+        // --- End of Reverted Logic ---
     
         _logger.LogInformation("Successfully created and configured admin account '{AdminSam}'.", adminSam);
     
