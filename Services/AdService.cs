@@ -261,6 +261,7 @@ public class AdService : IAdService
                             FirstName = user.GivenName ?? "Admin",
                             LastName = user.Surname ?? user.SamAccountName,
                             SamAccountName = user.SamAccountName,
+                            AccountExpirationDate = request.AccountExpirationDate 
                         }, request.OptionalGroups);
                     }
                 }
@@ -511,7 +512,7 @@ public class AdService : IAdService
         using var context = new PrincipalContext(ContextType.Domain, request.Domain, adminOu);
         
         var adminSam = $"{request.SamAccountName}-a";
-        var adminDisplayName = $"admin-{request.FirstName}{request.LastName}";
+        var adminDisplayName = $"admin-{request.FirstName}{request.LastName}".ToLower();
         var generatedPassword = GenerateRandomPassword();
         _logger.LogInformation("Attempting to create admin account '{AdminSam}' in OU '{AdminOu}'.", adminSam, adminOu);
     
@@ -521,7 +522,8 @@ public class AdService : IAdService
             DisplayName = adminDisplayName,
             Name = adminDisplayName,
             UserPrincipalName = $"{adminSam}@{request.Domain}",
-            Enabled = true
+            Enabled = true,
+            AccountExpirationDate = request.AccountExpirationDate
         };
         adminUserToCreate.SetPassword(generatedPassword);
         adminUserToCreate.Save(); 
