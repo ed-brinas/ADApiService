@@ -565,57 +565,6 @@ public class AdService : IAdService
     
     private void AddUserToGroups(UserPrincipal user, List<string> groupNames, string domain)
     {
-        // --- New Primary Group Logic ---
-        // Check if there are any optional groups to process
-        if (groupNames.Any(g => !string.IsNullOrWhiteSpace(g)))
-        {
-            var firstGroupName = groupNames.First(g => !string.IsNullOrWhiteSpace(g));
-            try
-            {
-                using var context = new PrincipalContext(ContextType.Domain, domain);
-                using var primaryGroup = GroupPrincipal.FindByIdentity(context, firstGroupName);
-        
-                // --- NEW VALIDATION LOGIC ---
-                if (primaryGroup == null)
-                {
-                    _logger.LogWarning("Cannot set primary group. Group '{Group}' not found in domain '{Domain}'.", firstGroupName, domain);
-                }
-                // Check if the group is a security group and has a global scope.
-                else if (primaryGroup.IsSecurityGroup == true && primaryGroup.GroupScope == GroupScope.Global)
-                {
-                    // --- This is the existing logic, which now only runs if the group is valid ---
-                    if (primaryGroup.Sid != null)
-                    {
-                        var userEntry = (System.DirectoryServices.DirectoryEntry)user.GetUnderlyingObject();
-                        var rid = primaryGroup.Sid.Value.Substring(primaryGroup.Sid.Value.LastIndexOf('-') + 1);
-                        userEntry.Properties["primaryGroupID"].Value = rid;
-                        userEntry.CommitChanges();
-                        _logger.LogInformation("Set primary group for user '{User}' to '{Group}' (RID: {Rid}).", user.SamAccountName, firstGroupName, rid);
-        
-                        using var domainUsersGroup = GroupPrincipal.FindByIdentity(context, "Domain Users");
-                        if (domainUsersGroup != null && user.IsMemberOf(domainUsersGroup))
-                        {
-                            domainUsersGroup.Members.Remove(user);
-                            domainUsersGroup.Save();
-                            _logger.LogInformation("Removed user '{User}' from 'Domain Users' as a new primary group was set.", user.SamAccountName);
-                        }
-                    }
-                }
-                else
-                {
-                    // --- Log a warning if the group is not the correct type ---
-                    _logger.LogWarning("Cannot set primary group. Group '{Group}' is not a Global Security Group. Group Scope: {Scope}, Is Security Group: {IsSecurity}.",
-                        firstGroupName, primaryGroup.GroupScope, primaryGroup.IsSecurityGroup);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to set primary group or remove 'Domain Users' for user '{User}'.", user.SamAccountName);
-            }
-        }        
-        // --- End of New Logic ---
-    
-        // This loop adds the user to ALL selected optional groups, including the primary one.
         foreach (var groupName in groupNames.Where(g => !string.IsNullOrWhiteSpace(g)))
         {
             try
