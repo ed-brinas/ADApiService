@@ -343,9 +343,10 @@ public class AdService : IAdService
 
                 var newPassword = GenerateRandomPassword();
                 user.SetPassword(newPassword);
-                //user.UnlockAccount();
+                user.UnlockAccount();
+                user.AccountExpirationDate = DateTime.UtcNow.AddDays(30);
                 user.Save();
-                
+                                
                 _logger.LogInformation("Successfully reset password for admin account '{AdminSam}'.", adminSam);
                 return newPassword;
             }
@@ -514,8 +515,10 @@ public class AdService : IAdService
         var adminSam = $"{request.SamAccountName}-a";
         var adminDisplayName = $"admin-{request.FirstName}{request.LastName}".ToLower();
         var generatedPassword = GenerateRandomPassword();
+        var expirationDate = DateTime.UtcNow.AddDays(30);
+        
         _logger.LogInformation("Attempting to create admin account '{AdminSam}' in OU '{AdminOu}'.", adminSam, adminOu);
-    
+        
         using var adminUserToCreate = new UserPrincipal(context)
         {
             SamAccountName = adminSam,
@@ -523,7 +526,7 @@ public class AdService : IAdService
             Name = adminDisplayName,
             UserPrincipalName = $"{adminSam}@{request.Domain}",
             Enabled = true,
-            AccountExpirationDate = request.AccountExpirationDate
+            AccountExpirationDate = expirationDate
         };
         adminUserToCreate.SetPassword(generatedPassword);
         adminUserToCreate.Save(); 
