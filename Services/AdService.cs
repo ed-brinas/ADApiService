@@ -514,8 +514,8 @@ public class AdService : IAdService
         var adminDisplayName = $"admin-{request.FirstName}{request.LastName}";
         var generatedPassword = GenerateRandomPassword();
         _logger.LogInformation("Attempting to create admin account '{AdminSam}' in OU '{AdminOu}'.", adminSam, adminOu);
-
-        using var adminUser = new UserPrincipal(context)
+    
+        using var adminUserToCreate = new UserPrincipal(context)
         {
             SamAccountName = adminSam,
             DisplayName = adminDisplayName,
@@ -523,42 +523,56 @@ public class AdService : IAdService
             UserPrincipalName = $"{adminSam}@{request.Domain}",
             Enabled = true
         };
-        adminUser.SetPassword(generatedPassword);
-        adminUser.Save();
-
-        _logger.LogDebug("Re-fetching admin user '{AdminSam}' to remove from 'Domain Users'.", adminSam);
-        try
+        adminUserToCreate.SetPassword(generatedPassword);
+        adminUserToCreate.Save(); 
+    
+        // --- Start of New Primary Group Logic for Admin Accounts ---
+        if (groupsToAssign?.Any(g => !string.IsNullOrWhiteSpace(g)) == true)
         {
-            // Reload the user from AD to get the most up-to-date group memberships
-            using var savedAdminUser = UserPrincipal.FindByIdentity(context, IdentityType.SamAccountName, adminSam);
-            if (savedAdminUser != null)
+            var firstGroupName = groupsToAssign.First(g => !string.IsNullOrWhiteSpace(g));
+            try
             {
-                using var domainUsersGroup = GroupPrincipal.FindByIdentity(context, "Domain Users");
-                if (domainUsersGroup != null && savedAdminUser.IsMemberOf(domainUsersGroup))
+                using var primaryGroup = GroupPrincipal.FindByIdentity(context, firstGroupName);
+                if (primaryGroup != null && primaryGroup.IsSecurityGroup == true && primaryGroup.GroupScope == GroupScope.Global)
                 {
-                    domainUsersGroup.Members.Remove(savedAdminUser);
-                    domainUsersGroup.Save();
-                    _logger.LogInformation("Successfully removed admin user '{AdminSam}' from the 'Domain Users' group.", adminSam);
+                    // Set the primary group
+                    var userEntry = (System.DirectoryServices.DirectoryEntry)adminUserToCreate.GetUnderlyingObject();
+                    var rid = primaryGroup.Sid.Value.Substring(primaryGroup.Sid.Value.LastIndexOf('-') + 1);
+                    userEntry.Properties["primaryGroupID"].Value = rid;
+                    userEntry.CommitChanges();
+                    _logger.LogInformation("Set primary group for admin '{AdminSam}' to '{Group}'.", adminSam, firstGroupName);
+    
+                    // Then, remove from 'Domain Users'
+                    using var domainUsersGroup = GroupPrincipal.FindByIdentity(context, "Domain Users");
+                    if (domainUsersGroup != null && adminUserToCreate.IsMemberOf(domainUsersGroup))
+                    {
+                        domainUsersGroup.Members.Remove(adminUserToCreate);
+                        domainUsersGroup.Save();
+                        _logger.LogInformation("Removed admin user '{AdminSam}' from 'Domain Users' group.", adminSam);
+                    }
+                }
+                else
+                {
+                    _logger.LogWarning("Cannot set primary group for '{AdminSam}'. Group '{Group}' is not a Global Security Group.", adminSam, firstGroupName);
                 }
             }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to set primary group for admin user '{AdminSam}'.", adminSam);
+            }
         }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Could not remove admin user '{AdminSam}' from 'Domain Users' group.", adminSam);
-        }
-
-        if (groupsToAssign?.Any() == true)
-        {
-            AddUserToGroups(adminUser, groupsToAssign, request.Domain);
-        }
-
+        // --- End of New Logic ---
+    
+        // Add user to all selected groups as secondary members
+        AddUserToGroups(adminUserToCreate, groupsToAssign ?? new List<string>(), request.Domain);
+    
         _logger.LogInformation("Successfully created and configured admin account '{AdminSam}'.", adminSam);
-
+    
         return new AdminAccountDetails
         {
-            SamAccountName = adminUser.SamAccountName,
-            DisplayName = adminUser.DisplayName,
-            UserPrincipalName = adminUser.UserPrincipalName,
+            SamAccountName = adminSam,
+            DisplayName = adminDisplayName,
+            UserPrincipalName = $"{adminSam}@{request.Domain}",
             InitialPassword = generatedPassword
         };
     }
