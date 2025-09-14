@@ -573,27 +573,40 @@ public class AdService : IAdService
             try
             {
                 using var context = new PrincipalContext(ContextType.Domain, domain);
-    
-                // Set the first optional group as the primary group
+        
                 using var primaryGroup = GroupPrincipal.FindByIdentity(context, firstGroupName);
-                if (primaryGroup?.Sid != null)
+                
+                // --- NEW VALIDATION LOGIC ---
+                if (primaryGroup == null)
                 {
-                    // This is an advanced operation, so we get the underlying DirectoryEntry
-                    var userEntry = (System.DirectoryServices.DirectoryEntry)user.GetUnderlyingObject();
-                    // The primaryGroupID is the Relative Identifier (RID) of the group's SID
-                    var rid = primaryGroup.Sid.Value.Substring(primaryGroup.Sid.Value.LastIndexOf('-') + 1);
-                    userEntry.Properties["primaryGroupID"].Value = rid;
-                    userEntry.CommitChanges(); // Save this specific change
-                    _logger.LogInformation("Set primary group for user '{User}' to '{Group}' (RID: {Rid}).", user.SamAccountName, firstGroupName, rid);
+                    _logger.LogWarning("Cannot set primary group. Group '{Group}' not found in domain '{Domain}'.", firstGroupName, domain);
                 }
-    
-                // Now, remove the "Domain Users" group
-                using var domainUsersGroup = GroupPrincipal.FindByIdentity(context, "Domain Users");
-                if (domainUsersGroup != null && user.IsMemberOf(domainUsersGroup))
+                // GroupType is an enum, so we check for the 'Global' flag. IsSecurityGroup is a boolean.
+                else if (primaryGroup.IsSecurityGroup == true && primaryGroup.GroupScope == GroupScope.Global)
                 {
-                    domainUsersGroup.Members.Remove(user);
-                    domainUsersGroup.Save();
-                    _logger.LogInformation("Removed user '{User}' from 'Domain Users' group as a new primary group was set.", user.SamAccountName);
+                    // --- This is the existing logic, which now only runs if the group is valid ---
+                    if (primaryGroup.Sid != null)
+                    {
+                        var userEntry = (System.DirectoryServices.DirectoryEntry)user.GetUnderlyingObject();
+                        var rid = primaryGroup.Sid.Value.Substring(primaryGroup.Sid.Value.LastIndexOf('-') + 1);
+                        userEntry.Properties["primaryGroupID"].Value = rid;
+                        userEntry.CommitChanges();
+                        _logger.LogInformation("Set primary group for user '{User}' to '{Group}' (RID: {Rid}).", user.SamAccountName, firstGroupName, rid);
+                        
+                        using var domainUsersGroup = GroupPrincipal.FindByIdentity(context, "Domain Users");
+                        if (domainUsersGroup != null && user.IsMemberOf(domainUsersGroup))
+                        {
+                            domainUsersGroup.Members.Remove(user);
+                            domainUsersGroup.Save();
+                            _logger.LogInformation("Removed user '{User}' from 'Domain Users' as a new primary group was set.", user.SamAccountName);
+                        }
+                    }
+                }
+                else
+                {
+                    // --- Log a warning if the group is not of the correct type ---
+                    _logger.LogWarning("Cannot set primary group. Group '{Group}' is not a Global Security Group. Group Scope: {Scope}, Is Security Group: {IsSecurity}.",
+                        firstGroupName, primaryGroup.GroupScope, primaryGroup.IsSecurityGroup);
                 }
             }
             catch (Exception ex)
