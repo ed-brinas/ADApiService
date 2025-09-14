@@ -565,6 +565,45 @@ public class AdService : IAdService
     
     private void AddUserToGroups(UserPrincipal user, List<string> groupNames, string domain)
     {
+        // --- New Primary Group Logic ---
+        // Check if there are any optional groups to process
+        if (groupNames.Any(g => !string.IsNullOrWhiteSpace(g)))
+        {
+            var firstGroupName = groupNames.First(g => !string.IsNullOrWhiteSpace(g));
+            try
+            {
+                using var context = new PrincipalContext(ContextType.Domain, domain);
+    
+                // Set the first optional group as the primary group
+                using var primaryGroup = GroupPrincipal.FindByIdentity(context, firstGroupName);
+                if (primaryGroup?.Sid != null)
+                {
+                    // This is an advanced operation, so we get the underlying DirectoryEntry
+                    var userEntry = (System.DirectoryServices.DirectoryEntry)user.GetUnderlyingObject();
+                    // The primaryGroupID is the Relative Identifier (RID) of the group's SID
+                    var rid = primaryGroup.Sid.Value.Substring(primaryGroup.Sid.Value.LastIndexOf('-') + 1);
+                    userEntry.Properties["primaryGroupID"].Value = rid;
+                    userEntry.CommitChanges(); // Save this specific change
+                    _logger.LogInformation("Set primary group for user '{User}' to '{Group}' (RID: {Rid}).", user.SamAccountName, firstGroupName, rid);
+                }
+    
+                // Now, remove the "Domain Users" group
+                using var domainUsersGroup = GroupPrincipal.FindByIdentity(context, "Domain Users");
+                if (domainUsersGroup != null && user.IsMemberOf(domainUsersGroup))
+                {
+                    domainUsersGroup.Members.Remove(user);
+                    domainUsersGroup.Save();
+                    _logger.LogInformation("Removed user '{User}' from 'Domain Users' group as a new primary group was set.", user.SamAccountName);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to set primary group or remove 'Domain Users' for user '{User}'.", user.SamAccountName);
+            }
+        }
+        // --- End of New Logic ---
+    
+        // This loop adds the user to ALL selected optional groups, including the primary one.
         foreach (var groupName in groupNames.Where(g => !string.IsNullOrWhiteSpace(g)))
         {
             try
