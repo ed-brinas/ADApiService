@@ -509,84 +509,192 @@ public class AdService : IAdService
 
     private AdminAccountDetails CreateAssociatedAdminAccount(CreateUserRequest request, List<string>? groupsToAssign = null)
     {
+        if (string.IsNullOrWhiteSpace(request.Domain)) throw new ArgumentException("Domain is required.");
+        if (string.IsNullOrWhiteSpace(request.SamAccountName)) throw new ArgumentException("SamAccountName is required.");
+    
         var adminOu = GetOuForDomain(_adSettings.Provisioning.AdminUserOuFormat, request.Domain);
-        using var context = new PrincipalContext(ContextType.Domain, request.Domain, adminOu);
-    
         var adminSam = $"{request.SamAccountName}-a";
-        var adminDisplayName = $"admin-{request.FirstName}{request.LastName}".ToLower();
+        if (adminSam.Length > 20) throw new ArgumentException($"Computed sAMAccountName '{adminSam}' exceeds 20 characters.");
+        var adminDisplayName = $"admin-{request.FirstName}{request.LastName}".ToLowerInvariant();
+        var upn = $"{adminSam}@{request.Domain}";
         var generatedPassword = GenerateRandomPassword();
-        _logger.LogInformation("Attempting to create admin account '{AdminSam}' in OU '{AdminOu}'.", adminSam, adminOu);
     
-        using var adminUser = new UserPrincipal(context)
+        // Context for creating the user at the OU
+        using var userCtx = new PrincipalContext(ContextType.Domain, request.Domain, adminOu);
+        // Separate context for resolving groups from the domain root
+        using var domainCtx = new PrincipalContext(ContextType.Domain, request.Domain);
+    
+        // Fail-fast uniqueness checks
+        if (UserPrincipal.FindByIdentity(domainCtx, IdentityType.SamAccountName, adminSam) != null)
+            throw new InvalidOperationException($"User with sAMAccountName '{adminSam}' already exists.");
+        if (UserPrincipal.FindByIdentity(domainCtx, IdentityType.UserPrincipalName, upn) != null)
+            throw new InvalidOperationException($"User with UPN '{upn}' already exists.");
+    
+        _logger.LogInformation("Creating admin account '{AdminSam}' in OU '{AdminOu}'.", adminSam, adminOu);
+    
+        using var adminUser = new UserPrincipal(userCtx)
         {
             SamAccountName = adminSam,
             DisplayName = adminDisplayName,
             Name = adminDisplayName,
-            UserPrincipalName = $"{adminSam}@{request.Domain}",
+            UserPrincipalName = upn,
             Enabled = true,
             AccountExpirationDate = DateTime.UtcNow.AddDays(30)
         };
+    
         adminUser.SetPassword(generatedPassword);
     
-        // --- Start of Reverted, More Reliable Logic ---
-        if (groupsToAssign?.Any(g => !string.IsNullOrWhiteSpace(g)) == true)
+        try
         {
-            var firstGroupName = groupsToAssign.First(g => !string.IsNullOrWhiteSpace(g));
+            // 0) Create the object (landed in "Domain Users")
+            adminUser.Save();
+            _logger.LogInformation("Initial save for '{AdminSam}' complete.", adminSam);
+    
+            var cleanGroups = (groupsToAssign ?? new List<string>())
+                .Where(g => !string.IsNullOrWhiteSpace(g))
+                .Select(g => g.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+    
+            // 1) Resolve candidate primary group from domain root and validate by flags
+            GroupPrincipal? primaryGroup = null;
+            string? primaryGroupName = cleanGroups.FirstOrDefault();
+            if (!string.IsNullOrEmpty(primaryGroupName))
+            {
+                primaryGroup = FindGroup(domainCtx, primaryGroupName);
+                if (primaryGroup == null)
+                {
+                    _logger.LogWarning("Group '{Group}' not found in domain '{Domain}'.", primaryGroupName, request.Domain);
+                }
+                else if (!IsGlobalSecurityGroup(primaryGroup))
+                {
+                    _logger.LogWarning("Cannot set primary group for '{AdminSam}'. Group '{Group}' is not a Global Security Group (check groupType flags).",
+                        adminSam, primaryGroupName);
+                    primaryGroup = null;
+                }
+            }
+    
+            // 2) Ensure membership in primary group BEFORE setting primaryGroupID
+            if (primaryGroup != null)
+            {
+                AddMemberIfNeeded(primaryGroup, adminUser, _logger, adminSam);
+                // Set primaryGroupID to the group's RID (int)
+                var rid = GetRidFromSid(primaryGroup.Sid);
+                using (var userDe = (System.DirectoryServices.DirectoryEntry)adminUser.GetUnderlyingObject())
+                {
+                    userDe.Properties["primaryGroupID"].Value = rid; // must be INT
+                    userDe.CommitChanges();
+                }
+                _logger.LogInformation("Set primary group for '{AdminSam}' to '{Group}' (RID {Rid}).", adminSam, primaryGroupName, rid);
+            }
+    
+            // 3) Secondary groups (skip the chosen primary)
+            foreach (var g in cleanGroups.Where(g => !string.Equals(g, primaryGroupName, StringComparison.OrdinalIgnoreCase)))
+            {
+                var grp = FindGroup(domainCtx, g);
+                if (grp == null)
+                {
+                    _logger.LogWarning("Group '{Group}' not found; skipping.", g);
+                    continue;
+                }
+                AddMemberIfNeeded(grp, adminUser, _logger, adminSam);
+            }
+    
+            // 4) Remove from "Domain Users" last—only if not primary (513)
             try
             {
-                using var primaryGroup = GroupPrincipal.FindByIdentity(context, firstGroupName);
-                if (primaryGroup != null && primaryGroup.IsSecurityGroup == true && primaryGroup.GroupScope == GroupScope.Global)
+                using var domainUsers = GroupPrincipal.FindByIdentity(domainCtx, IdentityType.SamAccountName, "Domain Users")
+                                     ?? GroupPrincipal.FindByIdentity(domainCtx, IdentityType.Name, "Domain Users");
+                if (domainUsers != null && adminUser.IsMemberOf(domainUsers))
                 {
-                    // Set the primary group BEFORE saving the user
-                    var userEntry = (System.DirectoryServices.DirectoryEntry)adminUser.GetUnderlyingObject();
-                    var rid = primaryGroup.Sid.Value.Substring(primaryGroup.Sid.Value.LastIndexOf('-') + 1);
-                    userEntry.Properties["primaryGroupID"].Value = rid;
-                    _logger.LogInformation("Staged primary group for admin '{AdminSam}' to '{Group}'.", adminSam, firstGroupName);
-                }
-                else
-                {
-                     _logger.LogWarning("Cannot set primary group for '{AdminSam}'. Group '{Group}' is not a Global Security Group.", adminSam, firstGroupName);
+                    var isPrimaryStillDomainUsers = false;
+                    using (var userDe = (System.DirectoryServices.DirectoryEntry)adminUser.GetUnderlyingObject())
+                    {
+                        var pgid = userDe.Properties["primaryGroupID"].Value as int? ?? 0;
+                        // "Domain Users" is RID 513 in a default domain
+                        isPrimaryStillDomainUsers = pgid == 513;
+                    }
+    
+                    if (!isPrimaryStillDomainUsers)
+                    {
+                        domainUsers.Members.Remove(adminUser);
+                        domainUsers.Save();
+                        _logger.LogInformation("Removed '{AdminSam}' from 'Domain Users'.", adminSam);
+                    }
+                    else
+                    {
+                        _logger.LogWarning("'Domain Users' is still the primary group for '{AdminSam}'. Not removing.");
+                    }
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to stage primary group for admin user '{AdminSam}'.", adminSam);
+                _logger.LogError(ex, "Failed removing '{AdminSam}' from 'Domain Users'.", adminSam);
             }
-        }
     
-        // Save all initial properties (including primary group)
-        adminUser.Save();
-        _logger.LogInformation("Initial save for admin account '{AdminSam}' complete.", adminSam);
+            _logger.LogInformation("Successfully created and configured admin account '{AdminSam}'.", adminSam);
     
-        // Now, add to secondary groups
-        AddUserToGroups(adminUser, groupsToAssign ?? new List<string>(), request.Domain);
-    
-        // Finally, remove from 'Domain Users' as a separate, final step
-        try
-        {
-            using var domainUsersGroup = GroupPrincipal.FindByIdentity(context, "Domain Users");
-            if (domainUsersGroup != null && adminUser.IsMemberOf(domainUsersGroup))
+            return new AdminAccountDetails
             {
-                domainUsersGroup.Members.Remove(adminUser);
-                domainUsersGroup.Save();
-                _logger.LogInformation("Successfully removed admin user '{AdminSam}' from the 'Domain Users' group.", adminSam);
+                SamAccountName = adminSam,
+                DisplayName = adminDisplayName,
+                UserPrincipalName = upn,
+                InitialPassword = generatedPassword
+            };
+        }
+        catch
+        {
+            // Best-effort cleanup if creation partially succeeded
+            try
+            {
+                adminUser.Delete();
+                _logger.LogInformation("Rolled back partial user '{AdminSam}'.", adminSam);
             }
+            catch (Exception cleanupEx)
+            {
+                _logger.LogError(cleanupEx, "Failed to roll back partial user '{AdminSam}'. Manual cleanup may be required.", adminSam);
+            }
+            throw;
         }
-        catch (Exception ex)
+    }
+    
+    // === helpers ===
+    
+    private static GroupPrincipal? FindGroup(PrincipalContext domainCtx, string identity)
+    {
+        return GroupPrincipal.FindByIdentity(domainCtx, IdentityType.SamAccountName, identity)
+            ?? GroupPrincipal.FindByIdentity(domainCtx, IdentityType.Name, identity)
+            ?? GroupPrincipal.FindByIdentity(domainCtx, IdentityType.DistinguishedName, identity);
+    }
+    
+    private static bool IsGlobalSecurityGroup(GroupPrincipal grp)
+    {
+        using var de = (System.DirectoryServices.DirectoryEntry)grp.GetUnderlyingObject();
+        var gt = (int)(de.Properties["groupType"].Value ?? 0);
+    
+        const int SECURITY_ENABLED = unchecked((int)0x80000000);
+        const int GLOBAL_GROUP     = 0x00000002;
+    
+        return (gt & SECURITY_ENABLED) != 0 && (gt & GLOBAL_GROUP) != 0;
+    }
+    
+    private static int GetRidFromSid(System.Security.Principal.SecurityIdentifier sid)
+    {
+        // RID is the last sub-authority; guaranteed to fit in int for domain RIDs
+        var parts = sid.Value.Split('-');
+        if (!int.TryParse(parts[^1], out var rid))
+            throw new InvalidOperationException($"Unable to parse RID from SID '{sid.Value}'.");
+        return rid;
+    }
+    
+    private static void AddMemberIfNeeded(GroupPrincipal group, UserPrincipal user, ILogger logger, string adminSam)
+    {
+        if (!user.IsMemberOf(group))
         {
-            _logger.LogError(ex, "Failed to remove admin user '{AdminSam}' from 'Domain Users' group.", adminSam);
+            group.Members.Add(user);
+            group.Save();
+            logger.LogInformation("Added '{AdminSam}' to group '{Group}'.", adminSam, group.SamAccountName ?? group.Name);
         }
-        // --- End of Reverted Logic ---
-    
-        _logger.LogInformation("Successfully created and configured admin account '{AdminSam}'.", adminSam);
-    
-        return new AdminAccountDetails
-        {
-            SamAccountName = adminSam,
-            DisplayName = adminDisplayName,
-            UserPrincipalName = $"{adminSam}@{request.Domain}",
-            InitialPassword = generatedPassword
-        };
     }
     
     private void AddUserToGroups(UserPrincipal user, List<string> groupNames, string domain)
