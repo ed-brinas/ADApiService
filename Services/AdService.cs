@@ -612,7 +612,7 @@ public class AdService : IAdService
             {
                 _logger.LogError(ex, "Failed to set primary group or remove 'Domain Users' for user '{User}'.", user.SamAccountName);
             }
-        }
+        }        
         // --- End of New Logic ---
     
         // This loop adds the user to ALL selected optional groups, including the primary one.
