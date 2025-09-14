@@ -534,10 +534,15 @@ public class AdService : IAdService
             var firstGroupName = groupsToAssign.First(g => !string.IsNullOrWhiteSpace(g));
             try
             {
-                using var primaryGroup = GroupPrincipal.FindByIdentity(context, firstGroupName);
+                // NEW: Explicitly qualify the group name with the domain
+                var qualifiedGroupName = $"{request.Domain}\\{firstGroupName}";
+                _logger.LogInformation("Attempting to find primary group using qualified name: '{QualifiedName}'", qualifiedGroupName);
+        
+                // Use the qualified name to find the group
+                using var primaryGroup = GroupPrincipal.FindByIdentity(context, qualifiedGroupName);
+        
                 if (primaryGroup != null && primaryGroup.IsSecurityGroup == true && primaryGroup.GroupScope == GroupScope.Global)
                 {
-                    // Set the primary group BEFORE saving the user
                     var userEntry = (System.DirectoryServices.DirectoryEntry)adminUser.GetUnderlyingObject();
                     var rid = primaryGroup.Sid.Value.Substring(primaryGroup.Sid.Value.LastIndexOf('-') + 1);
                     userEntry.Properties["primaryGroupID"].Value = rid;
@@ -545,7 +550,7 @@ public class AdService : IAdService
                 }
                 else
                 {
-                     _logger.LogWarning("Cannot set primary group for '{AdminSam}'. Group '{Group}' is not a Global Security Group.", adminSam, firstGroupName);
+                     _logger.LogWarning("Cannot set primary group for '{AdminSam}'. Group '{Group}' could not be found or is not a Global Security Group.", adminSam, firstGroupName);
                 }
             }
             catch (Exception ex)
