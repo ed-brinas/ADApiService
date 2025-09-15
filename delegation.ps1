@@ -5,24 +5,28 @@ $targetOU = "OU=_AdminAccounts,DC=new,DC=lab,DC=local"
 # The full User Principal Name (UPN) of the service account from the PARENT domain.
 $serviceAccountUPN = "svc_adapi@lab.local"
 
+# The fully qualified domain name of a Global Catalog server in the PARENT domain.
+# This is often the same as a regular domain controller.
+$globalCatalog = "DC-03.lab.local"
+
 # --- Main Script ---
 
-# Step 1: Get the service account's SID. PowerShell can find users in parent domains using their UPN.
-Write-Host "Fetching SID for '$serviceAccountUPN'..."
-$user = Get-ADUser -Identity $serviceAccountUPN
+# Step 1: Get the service account's SID by querying the Global Catalog in the parent domain.
+Write-Host "Fetching SID for '$serviceAccountUPN' from Global Catalog server '$globalCatalog'..."
+$user = Get-ADUser -Identity $serviceAccountUPN -Server $globalCatalog
 if ($null -eq $user) {
-    Write-Error "Could not find service account '$serviceAccountUPN'. Please check the User Principal Name."
+    Write-Error "Could not find service account '$serviceAccountUPN' in the forest. Please check the UPN and Global Catalog server name."
     return
 }
 $sid = $user.SID
 Write-Host "Successfully found SID for '$($user.SamAccountName)'."
 
-# Step 2: Get the current ACL from the target OU. This will now work as it's a local operation.
+# Step 2: Get the current ACL from the target OU. This is a local operation.
 Write-Host "Fetching ACL for '$targetOU'..."
 $acl = Get-Acl "AD:\$targetOU"
 
 # Step 3: Define and add all necessary permissions.
-# (This entire section remains the same as the previous script)
+# (This section remains unchanged)
 
 # 3.1: Permission to Create User Objects
 $objectType = [System.Guid]::new("bf967aba-0de6-11d0-a329-00c04fd8d5cd")
