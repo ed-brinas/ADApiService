@@ -1,19 +1,12 @@
 <#
-Delegate a PARENT domain service account to manage a CHILD domain OU.
+Delegation: Parent NCC\svc-ad-adm-portal manages OU in child EMS
 
 Grants:
-  - Create/Delete User objects
-  - Reset Password (extended right) on users
-  - Write all properties on users
-  - Modify group membership (write 'member' on groups)
-
-Design:
-  - Look up svc account in PARENT via UPN-safe filter (not -Identity)
-  - Resolve schema/extended-right GUIDs in CHILD
-  - Bind to CHILD OU via ADSI (LDAP://childDC/OU=...,DC=child,...)
-  - Read/modify DACL using DirectoryServices (no AD PSDrive path needed)
+ - Create/Delete User objects
+ - Reset Password (extended right) on users
+ - Write all properties on users
+ - Modify group membership (write 'member' on groups)
 #>
-
 
 
 Set-StrictMode -Version Latest
@@ -32,7 +25,7 @@ if (-not $user) { throw "Could not find '$SvcUPN' anywhere in the forest." }
 $sid = $user.SID
 Write-Host "Resolved UPN to sAM: $($user.SamAccountName); SID: $sid"
 
-# CHILD context info (schema/config NCs come from CHILD)
+# --- CHILD forest context (schema/config come from CHILD) ---
 Write-Host "Querying child DC '$ChildServer' for schema/config NCs..."
 $rootDseChild = Get-ADRootDSE -Server $ChildServer
 $schemaNC     = $rootDseChild.schemaNamingContext
@@ -40,7 +33,7 @@ $configNC     = $rootDseChild.configurationNamingContext
 
 # Verify target OU exists in CHILD
 Write-Host "Verifying target OU in CHILD..."
-$ou = Get-ADOrganizationalUnit -Server $ChildServer -Identity $TargetOUDN -ErrorAction Stop
+$null = Get-ADOrganizationalUnit -Server $ChildServer -Identity $TargetOUDN -ErrorAction Stop
 
 # --- Resolve GUIDs in CHILD (dynamic; no hardcoding) ---
 function Get-SchemaGuid {
@@ -54,7 +47,7 @@ function Get-ExtendedRightGuid {
     param([Parameter(Mandatory)][string]$RightDisplayName)
     $er = Get-ADObject -Server $ChildServer -SearchBase "CN=Extended-Rights,$configNC" `
           -LDAPFilter "(displayName=$RightDisplayName)" -Properties rightsGuid
-    if (-not $er) { throw "Extended right '$RightDisplayName' not found." }
+    if (-not $er) { throw "Extended right '$RightDisplayName' not found in Extended-Rights." }
     [Guid]$er.rightsGuid
 }
 
@@ -68,16 +61,23 @@ $guidResetPassword   = Get-ExtendedRightGuid -RightDisplayName "Reset Password"
 $ldapPath = "LDAP://$ChildServer/$TargetOUDN"
 Write-Host "Binding to CHILD OU via ADSI: $ldapPath"
 $de = New-Object System.DirectoryServices.DirectoryEntry($ldapPath)
-# Ensure we read/write the DACL
-$de.Options.SecurityMasks = [System.DirectoryServices.SecurityMasks]::Dacl
 
-# Read current ACL
+# Try to explicitly load security descriptor (works on most builds even without Options.SecurityMasks)
+try {
+    $null = $de.RefreshCache(@('ntSecurityDescriptor'))
+} catch {
+    Write-Verbose "RefreshCache(ntSecurityDescriptor) not supported here; continuing."
+}
+
+# Read current ACL (returns an ActiveDirectorySecurity)
 $acl = $de.ObjectSecurity
+if (-not $acl) { throw "Failed to read ObjectSecurity from '$ldapPath'." }
 
-# Shortcuts
 $ADRights = [System.DirectoryServices.ActiveDirectoryRights]
 $Inherit  = [System.DirectoryServices.ActiveDirectorySecurityInheritance]
 $Allow    = [System.Security.AccessControl.AccessControlType]::Allow
+
+# ---- Rules -------------------------------------------------------------
 
 # 1) Create User objects under the OU
 $ace = New-Object System.DirectoryServices.ActiveDirectoryAccessRule `
