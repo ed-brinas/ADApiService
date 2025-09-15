@@ -1,28 +1,27 @@
-<# 
-Delegation: Parent LAB\svc_adapi manages OU in child NEW
+<#
+Delegate a PARENT domain service account to manage a CHILD domain OU.
 
 Grants:
- - Create/Delete User objects
- - Reset Password (extended right) on users
- - Write all properties on users
- - Modify group membership (write 'member' on groups)
+  - Create/Delete User objects
+  - Reset Password (extended right) on users
+  - Write all properties on users
+  - Modify group membership (write 'member' on groups)
+
+Design:
+  - Look up svc account in PARENT via UPN-safe filter (not -Identity)
+  - Resolve schema/extended-right GUIDs in CHILD
+  - Bind to CHILD OU via ADSI (LDAP://childDC/OU=...,DC=child,...)
+  - Read/modify DACL using DirectoryServices (no AD PSDrive path needed)
 #>
 
-# ------------------ CONFIG ------------------
-$TargetOUDN    = "OU=_AdminAccounts,DC=NEW,DC=LAB,DC=LOCAL"   # Full DN in CHILD
-$SvcUPN        = "svc_ad-adm-portal@lab.local"                # Service account in PARENT
-$ChildServer   = "adc-01.new.lab.local"                       # Child domain DC
-$ParentServer  = "lab.local"                                  # Parent domain (or specific LAB DC)
-$GCServer      = "DC-03.lab.local"                            # (optional) GC in LAB
-$DriveName     = "ADNEW"                                      # PSDrive name for child
-# --------------------------------------------
+
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 Import-Module ActiveDirectory
 
 Write-Host "Looking up service account '$SvcUPN' in parent domain ($ParentServer)..."
-# Use a UPN-friendly query (Filter/LDAPFilter), not -Identity
+# Use UPN-friendly lookup (Filter/LDAPFilter), not -Identity
 $user = Get-ADUser -Server $ParentServer -Filter "userPrincipalName -eq '$SvcUPN'" -Properties SID,SamAccountName
 if (-not $user) {
     Write-Warning "Not found via $ParentServer. Trying Global Catalog $GCServer:3268..."
@@ -33,47 +32,28 @@ if (-not $user) { throw "Could not find '$SvcUPN' anywhere in the forest." }
 $sid = $user.SID
 Write-Host "Resolved UPN to sAM: $($user.SamAccountName); SID: $sid"
 
-# --- Bind PSDrive to CHILD domain ---
-Write-Host "Binding to child DC '$ChildServer'..."
+# CHILD context info (schema/config NCs come from CHILD)
+Write-Host "Querying child DC '$ChildServer' for schema/config NCs..."
 $rootDseChild = Get-ADRootDSE -Server $ChildServer
-$defaultNC    = $rootDseChild.defaultNamingContext   # e.g. DC=new,DC=lab,DC=local
+$schemaNC     = $rootDseChild.schemaNamingContext
+$configNC     = $rootDseChild.configurationNamingContext
 
-# Recreate drive cleanly
-$existing = Get-PSDrive -Name $DriveName -PSProvider ActiveDirectory -ErrorAction SilentlyContinue
-if ($existing) { Remove-PSDrive -Name $DriveName -Force }
-New-PSDrive -Name $DriveName -PSProvider ActiveDirectory -Server $ChildServer -Root $defaultNC | Out-Null
+# Verify target OU exists in CHILD
+Write-Host "Verifying target OU in CHILD..."
+$ou = Get-ADOrganizationalUnit -Server $ChildServer -Identity $TargetOUDN -ErrorAction Stop
 
-# Build OU path RELATIVE to the drive root (avoid repeating the NC)
-$rdnPath = if ($TargetOUDN -like "*,${defaultNC}") {
-    $TargetOUDN.Substring(0, $TargetOUDN.Length - ("," + $defaultNC).Length)
-} else {
-    $TargetOUDN
-}
-$ouPath = "$DriveName`:\$rdnPath"
-Write-Host "Resolved OU path: $ouPath"
-
-# Verify the OU exists using AD cmdlet (targets CHILD via -Server)
-try {
-    $ou = Get-ADOrganizationalUnit -Server $ChildServer -Identity $TargetOUDN -ErrorAction Stop
-} catch {
-    throw "Target OU '$TargetOUDN' not found in child domain ($ChildServer). Check the DN."
-}
-
-# --- Resolve needed GUIDs dynamically from CHILD schema/config ---
-$schemaNC = $rootDseChild.schemaNamingContext
-$configNC = $rootDseChild.configurationNamingContext
-
+# --- Resolve GUIDs in CHILD (dynamic; no hardcoding) ---
 function Get-SchemaGuid {
     param([Parameter(Mandatory)][string]$LdapDisplayName)
     $obj = Get-ADObject -Server $ChildServer -SearchBase $schemaNC `
-        -LDAPFilter "(|(ldapDisplayName=$LdapDisplayName)(cn=$LdapDisplayName))" -Properties schemaIDGUID
-    if (-not $obj) { throw "Schema object '$LdapDisplayName' not found." }
+           -LDAPFilter "(|(ldapDisplayName=$LdapDisplayName)(cn=$LdapDisplayName))" -Properties schemaIDGUID
+    if (-not $obj) { throw "Schema object '$LdapDisplayName' not found in $schemaNC." }
     [Guid]$obj.schemaIDGUID
 }
 function Get-ExtendedRightGuid {
     param([Parameter(Mandatory)][string]$RightDisplayName)
     $er = Get-ADObject -Server $ChildServer -SearchBase "CN=Extended-Rights,$configNC" `
-        -LDAPFilter "(displayName=$RightDisplayName)" -Properties rightsGuid
+          -LDAPFilter "(displayName=$RightDisplayName)" -Properties rightsGuid
     if (-not $er) { throw "Extended right '$RightDisplayName' not found." }
     [Guid]$er.rightsGuid
 }
@@ -84,13 +64,20 @@ $guidMemberAttribute = Get-SchemaGuid -LdapDisplayName "member"
 $guidResetPassword   = Get-ExtendedRightGuid -RightDisplayName "Reset Password"
 # $guidChangePassword  = Get-ExtendedRightGuid -RightDisplayName "Change Password"  # optional
 
-# --- Read ACL, build ACEs, and write back ---
-Write-Host "Reading ACL from child OU..."
-$acl = Get-Acl -Path $ouPath
+# --- Bind to CHILD OU via ADSI and work with the DACL directly ---
+$ldapPath = "LDAP://$ChildServer/$TargetOUDN"
+Write-Host "Binding to CHILD OU via ADSI: $ldapPath"
+$de = New-Object System.DirectoryServices.DirectoryEntry($ldapPath)
+# Ensure we read/write the DACL
+$de.Options.SecurityMasks = [System.DirectoryServices.SecurityMasks]::Dacl
 
-$ADRights  = [System.DirectoryServices.ActiveDirectoryRights]
-$Inherit   = [System.DirectoryServices.ActiveDirectorySecurityInheritance]
-$Allow     = [System.Security.AccessControl.AccessControlType]::Allow
+# Read current ACL
+$acl = $de.ObjectSecurity
+
+# Shortcuts
+$ADRights = [System.DirectoryServices.ActiveDirectoryRights]
+$Inherit  = [System.DirectoryServices.ActiveDirectorySecurityInheritance]
+$Allow    = [System.Security.AccessControl.AccessControlType]::Allow
 
 # 1) Create User objects under the OU
 $ace = New-Object System.DirectoryServices.ActiveDirectoryAccessRule `
@@ -104,13 +91,14 @@ $ace = New-Object System.DirectoryServices.ActiveDirectoryAccessRule `
 $acl.AddAccessRule($ace)
 Write-Host "Rule Added: Delete User objects"
 
-# 3) Reset user passwords (extended right) scoped to User class
+# 3) Reset Password (extended right) scoped to User class
 $ace = New-Object System.DirectoryServices.ActiveDirectoryAccessRule `
     ($sid, $ADRights::ExtendedRight, $Allow, $guidResetPassword, $Inherit::Descendents, $guidUserClass)
 $acl.AddAccessRule($ace)
 Write-Host "Rule Added: Reset Password (User)"
 
-# 4) Write all properties on User objects (ObjectType = Guid.Empty; scope via inheritedObjectType=user)
+# 4) Write all properties on User objects
+#    (ObjectType = Guid.Empty => all properties; scope via inheritedObjectType=user)
 $ace = New-Object System.DirectoryServices.ActiveDirectoryAccessRule `
     ($sid, $ADRights::WriteProperty, $Allow, [Guid]::Empty, $Inherit::Descendents, $guidUserClass)
 $acl.AddAccessRule($ace)
@@ -122,7 +110,15 @@ $ace = New-Object System.DirectoryServices.ActiveDirectoryAccessRule `
 $acl.AddAccessRule($ace)
 Write-Host "Rule Added: Modify 'member' (Group)"
 
-Write-Host "Writing updated ACL to child OU..."
-Set-Acl -Path $ouPath -AclObject $acl
+# (Optional) Allow "Change Password" extended right on user objects
+# $ace = New-Object System.DirectoryServices.ActiveDirectoryAccessRule `
+#     ($sid, $ADRights::ExtendedRight, $Allow, $guidChangePassword, $Inherit::Descendents, $guidUserClass)
+# $acl.AddAccessRule($ace)
+# Write-Host "Rule Added: Change Password (User) (optional)"
 
-Write-Host "Delegation complete: $SvcUPN (LAB) now has delegated rights on $TargetOUDN (NEW)."
+# Write ACL back
+Write-Host "Committing ACL to CHILD OU..."
+$de.ObjectSecurity = $acl
+$de.CommitChanges()
+
+Write-Host "Delegation complete: $SvcUPN (PARENT) now has delegated rights on $TargetOUDN (CHILD)."
