@@ -809,6 +809,39 @@ private static string EscapeLdap(string value)
         .Replace("\0", @"\00");
 }
 
+// Ensures sAMAccountName meets legacy 20-char limit and isn't empty
+private static string SafeSam(string proposed)
+{
+    const int maxLen = 20;
+    var t = (proposed ?? string.Empty).Trim();
+    if (t.Length > maxLen) t = t[..maxLen];
+    if (string.IsNullOrWhiteSpace(t))
+        throw new ArgumentException("Proposed sAMAccountName is empty after normalization.");
+    return t;
+}
+// Trim, de-dupe (case-insensitive), and drop blanks from group list
+private static IReadOnlyList<string> NormalizeGroups(IEnumerable<string>? groups)
+{
+    if (groups == null) return Array.Empty<string>();
+    var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    var result = new List<string>();
+    foreach (var g in groups)
+    {
+        var trimmed = g?.Trim();
+        if (string.IsNullOrWhiteSpace(trimmed)) continue;
+        if (seen.Add(trimmed)) result.Add(trimmed);
+    }
+    return result;
+}
+// Extract the RID (last sub-authority) from a SID; needed for primaryGroupID
+private static int GetRidFromSid(System.Security.Principal.SecurityIdentifier sid)
+{
+    var parts = sid.Value.Split('-');
+    var last = parts[^1];
+    if (!int.TryParse(last, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var rid))
+        throw new InvalidOperationException($"Invalid SID format: {sid.Value}");
+    return rid;
+}
 
 //   
     private void AddUserToGroups(UserPrincipal user, List<string> groupNames, string domain)
