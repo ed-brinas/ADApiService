@@ -1028,21 +1028,7 @@ private AdminAccountDetails CreateAssociatedAdminAccount(CreateUserRequest reque
         return trimmed;
     }
 
-    // ======= PLACEHOLDERS YOU ALREADY HAVE IN YOUR CODEBASE =======
-    // Implement/keep these as in your project:
 
-    private string GetOuForDomain(string format, string domainFqdn)
-    {
-        // e.g. string.Format(format, domainFqdn) or your custom logic
-        // Must return an OU DN where the admin account will be created
-        throw new NotImplementedException();
-    }
-
-    private string GenerateRandomPassword()
-    {
-        // Your existing secure password generator
-        throw new NotImplementedException();
-    }
 
 
     #endregion
