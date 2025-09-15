@@ -4,6 +4,14 @@ using System.DirectoryServices.AccountManagement;
 using System.Security.Claims;
 using System.Text;
 
+// Added
+using System;
+using System.Collections.Generic;
+using System.DirectoryServices;
+using System.Globalization;
+using System.Linq;
+using System.Threading;
+
 namespace ADApiService.Services;
 
 /// <summary>
@@ -507,6 +515,7 @@ public class AdService : IAdService
         return groupNames;
     }
 //
+/*
 private AdminAccountDetails CreateAssociatedAdminAccount(CreateUserRequest request, List<string>? groupsToAssign = null)
 {
     var adminOu = GetOuForDomain(_adSettings.Provisioning.AdminUserOuFormat, request.Domain);
@@ -582,6 +591,240 @@ private AdminAccountDetails CreateAssociatedAdminAccount(CreateUserRequest reque
         InitialPassword = generatedPassword
     };
 }
+*/
+
+private AdminAccountDetails CreateAssociatedAdminAccount(CreateUserRequest request, List<string>? groupsToAssign = null)
+{
+    // Resolve OU for the domain where we’ll create the admin user.
+    var adminOu = GetOuForDomain(_adSettings.Provisioning.AdminUserOuFormat, request.Domain);
+    var adminSam = SafeSam($"{request.SamAccountName}-a"); // ensure <=20 chars etc.
+    var adminDisplayName = $"admin-{request.FirstName}{request.LastName}"
+        .ToLower(CultureInfo.InvariantCulture);
+
+    var userPrincipalName = $"{adminSam}@{request.Domain}";
+    var generatedPassword = GenerateRandomPassword();
+
+    // Normalize incoming groups: trim, dedupe, drop blanks
+    var normalizedGroups = NormalizeGroups(groupsToAssign);
+
+    _logger.LogInformation(
+        "Attempting to create admin account '{AdminSam}' in OU '{AdminOu}'.",
+        adminSam, adminOu);
+
+    using var context = new PrincipalContext(ContextType.Domain, request.Domain, adminOu);
+
+    // Create the user with minimal properties, Save, then set password, then enable.
+    using var adminUser = new UserPrincipal(context)
+    {
+        SamAccountName = adminSam,
+        Name           = adminDisplayName, // RDN attribute (cn)
+        DisplayName    = adminDisplayName,
+        UserPrincipalName = userPrincipalName,
+        Enabled           = false, // enable AFTER we set the password
+        AccountExpirationDate = DateTime.UtcNow.AddDays(30),
+    };
+
+    try
+    {
+        // 1) Create skeleton user first
+        adminUser.Save();
+        _logger.LogInformation("Initial save for admin account '{AdminSam}' complete.", adminSam);
+
+        // 2) Set password and enable
+        adminUser.SetPassword(generatedPassword);
+        adminUser.Enabled = true;
+        adminUser.Save();
+        _logger.LogInformation("Password set and account enabled for '{AdminSam}'.", adminSam);
+    }
+    catch (Exception ex)
+    {
+        _logger.LogError(ex, "Failed creating/enabling admin account '{AdminSam}'.", adminSam);
+        throw; // bubble up so caller can surface appropriate failure
+    }
+
+    // 3) Add to all requested groups as secondary memberships (best effort, continue on partial failures)
+    if (normalizedGroups.Count > 0)
+    {
+        foreach (var groupName in normalizedGroups)
+        {
+            try
+            {
+                using var grp = GroupPrincipal.FindByIdentity(context, groupName);
+                if (grp == null)
+                {
+                    _logger.LogWarning("Group '{Group}' not found. Skipping for '{AdminSam}'.", groupName, adminSam);
+                    continue;
+                }
+
+                if (!adminUser.IsMemberOf(grp))
+                {
+                    grp.Members.Add(adminUser);
+                    grp.Save();
+                    _logger.LogInformation("Added '{AdminSam}' to group '{Group}'.", adminSam, groupName);
+                }
+                else
+                {
+                    _logger.LogDebug("'{AdminSam}' is already a member of '{Group}'.", adminSam, groupName);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to add '{AdminSam}' to group '{Group}'. Continuing.", adminSam, groupName);
+            }
+        }
+    }
+
+    // 4) Set primary group last (final, separate transaction), then remove from Domain Users
+    var candidatePrimary = normalizedGroups.FirstOrDefault();
+    if (!string.IsNullOrWhiteSpace(candidatePrimary))
+    {
+        TrySetPrimaryGroupWithRetries(context, adminUser, adminSam, candidatePrimary);
+
+        // After primary group successfully set, try removing from Domain Users
+        try
+        {
+            using var domainUsers = GroupPrincipal.FindByIdentity(context, "Domain Users");
+            if (domainUsers != null && adminUser.IsMemberOf(domainUsers))
+            {
+                domainUsers.Members.Remove(adminUser);
+                domainUsers.Save();
+                _logger.LogInformation("Removed '{AdminSam}' from 'Domain Users'.", adminSam);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed removing '{AdminSam}' from 'Domain Users' (non-fatal).", adminSam);
+        }
+    }
+    else
+    {
+        _logger.LogInformation("No groups provided to set as primary for '{AdminSam}'. Skipping primary group step.", adminSam);
+    }
+
+    _logger.LogInformation("Successfully created and configured admin account '{AdminSam}'.", adminSam);
+
+    return new AdminAccountDetails
+    {
+        SamAccountName    = adminSam,
+        DisplayName       = adminDisplayName,
+        UserPrincipalName = userPrincipalName,
+        InitialPassword   = generatedPassword
+    };
+}
+
+private static IReadOnlyList<string> NormalizeGroups(IEnumerable<string>? groups)
+{
+    if (groups == null) return Array.Empty<string>();
+    var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    foreach (var g in groups)
+    {
+        var trimmed = g?.Trim();
+        if (!string.IsNullOrWhiteSpace(trimmed))
+            set.Add(trimmed);
+    }
+    // Keep original relative order while de-duplicating
+    return groups
+        .Where(g => !string.IsNullOrWhiteSpace(g))
+        .Select(g => g.Trim())
+        .Where(set.Contains)
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToList();
+}
+
+private void TrySetPrimaryGroupWithRetries(
+    PrincipalContext context,
+    UserPrincipal adminUser,
+    string adminSam,
+    string primaryGroupName)
+{
+    // Don’t let Domain Users become the chosen primary here (caller removes it anyway)
+    if (primaryGroupName.Equals("Domain Users", StringComparison.OrdinalIgnoreCase))
+    {
+        _logger.LogWarning(
+            "'{AdminSam}': Requested primary group is 'Domain Users'. Skipping explicit primary change.",
+            adminSam);
+        return;
+    }
+
+    // Validate group type: Global Security Group only
+    using var primaryGroup = GroupPrincipal.FindByIdentity(context, primaryGroupName);
+    if (primaryGroup == null)
+    {
+        _logger.LogWarning("'{AdminSam}': Primary group '{Group}' not found.", adminSam, primaryGroupName);
+        return;
+    }
+    if (primaryGroup.IsSecurityGroup != true || primaryGroup.GroupScope != GroupScope.Global)
+    {
+        _logger.LogWarning(
+            "'{AdminSam}': Group '{Group}' is not a Global Security Group. Skipping primary group set.",
+            adminSam, primaryGroupName);
+        return;
+    }
+
+    // The write to primaryGroupID can be timing-sensitive; use a short bounded retry.
+    const int maxAttempts = 4;
+    var delayMs = 600;
+
+    for (var attempt = 1; attempt <= maxAttempts; attempt++)
+    {
+        try
+        {
+            using var userEntry = (DirectoryEntry)adminUser.GetUnderlyingObject();
+            var rid = GetRidFromSid(primaryGroup.Sid);
+            userEntry.Properties["primaryGroupID"].Value = rid;
+            userEntry.CommitChanges();
+
+            _logger.LogInformation(
+                "Successfully set primary group for '{AdminSam}' to '{Group}'.",
+                adminSam, primaryGroupName);
+            return;
+        }
+        catch (Exception ex)
+        {
+            if (attempt >= maxAttempts)
+            {
+                _logger.LogError(ex,
+                    "Failed to set primary group for '{AdminSam}' to '{Group}' after {Attempts} attempts.",
+                    adminSam, primaryGroupName, attempt);
+                return;
+            }
+
+            _logger.LogWarning(
+                ex,
+                "Attempt {Attempt}/{Max} to set primary group for '{AdminSam}' failed. Retrying in {DelayMs} ms.",
+                attempt, maxAttempts, adminSam, delayMs);
+
+            Thread.Sleep(delayMs);
+            delayMs *= 2; // simple backoff
+        }
+    }
+}
+
+private static int GetRidFromSid(System.Security.Principal.SecurityIdentifier sid)
+{
+    // The RID is the last sub-authority in the SID (primaryGroupID wants the RID as an integer)
+    var sidParts = sid.Value.Split('-');
+    var last = sidParts[^1];
+    return int.TryParse(last, NumberStyles.Integer, CultureInfo.InvariantCulture, out var rid)
+        ? rid
+        : throw new InvalidOperationException($"Invalid SID format: {sid.Value}");
+}
+
+private static string SafeSam(string proposed)
+{
+    // sAMAccountName can’t exceed 20 chars; trim & ensure not empty
+    const int maxLen = 20;
+    var trimmed = (proposed ?? string.Empty).Trim();
+    if (trimmed.Length > maxLen)
+        trimmed = trimmed.Substring(0, maxLen);
+
+    if (string.IsNullOrWhiteSpace(trimmed))
+        throw new ArgumentException("Proposed sAMAccountName is empty after normalization.");
+
+    return trimmed;
+}
+
+
 //    
     private void AddUserToGroups(UserPrincipal user, List<string> groupNames, string domain)
     {
