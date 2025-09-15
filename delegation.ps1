@@ -8,13 +8,13 @@ Grants:
  - Modify group membership (write 'member' on groups)
 #>
 
-
 # ------------------ CONFIG ------------------
-$TargetOUDN    = "OU=_AdminAccounts,DC=NEW,DC=LAB,DC=LOCAL"  # Child OU DN
-$SvcUPN        = "svc_adapi@lab.local"                       # Parent svc account UPN
-$ChildServer   = "mve-prd-adc-01.new.lab.local"              # A reachable NEW domain DC
-$ParentServer  = "lab.local"                                 # LAB domain (or specific LAB DC)
-$GCServer      = "DC-03.lab.local"                           # Optional: a GC-capable DC in LAB
+$TargetOUDN    = "OU=_AdminAccounts,DC=NEW,DC=LAB,DC=LOCAL"   # Full DN in CHILD
+$SvcUPN        = "svc_ad-adm-portal@lab.local"                # Service account in PARENT
+$ChildServer   = "adc-01.new.lab.local"                       # Child domain DC
+$ParentServer  = "lab.local"                                  # Parent domain (or specific LAB DC)
+$GCServer      = "DC-03.lab.local"                            # (optional) GC in LAB
+$DriveName     = "ADNEW"                                      # PSDrive name for child
 # --------------------------------------------
 
 Set-StrictMode -Version Latest
