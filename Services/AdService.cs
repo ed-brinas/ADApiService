@@ -8,9 +8,13 @@ using System.Text;
 using System;
 using System.Collections.Generic;
 using System.DirectoryServices;
+using System.DirectoryServices.AccountManagement;
 using System.Globalization;
 using System.Linq;
+using System.Security.Principal;
+using System.Text.RegularExpressions;
 using System.Threading;
+// using Microsoft.Extensions.Logging; // if needed
 
 namespace ADApiService.Services;
 
