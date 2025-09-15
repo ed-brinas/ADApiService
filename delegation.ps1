@@ -1,17 +1,14 @@
 # --- Configuration ---
-# The distinguished name of the OU you want to delegate control over.
-$targetOU = "OU=_Managed,DC=lab,DC=local" 
+$targetOU = "OU=_Managed,DC=new,DC=lab,DC=local"
+$serviceAccount = "svc_adapi"
+$childDomainController = "NEWDC01.new.lab.local" # <-- Add the DC name here
 
 # The SamAccountName of the service account.
 $serviceAccount = "svc_adapi"
 
 # --- Main Script ---
-
-# Get the security identifier (SID) for the service account.
-$sid = (Get-ADUser -Identity $serviceAccount).SID
-
-# Get the current Access Control List (ACL) for the target OU.
-$acl = Get-Acl "AD:\$targetOU"
+$sid = (Get-ADUser -Identity $serviceAccount -Server $childDomainController).SID
+$acl = Get-Acl "AD:\$targetOU" -Server $childDomainController
 
 # Define the specific permissions needed by the API.
 # Each object represents a specific right to be granted.
@@ -85,5 +82,6 @@ $acl.AddAccessRule($ace)
 Write-Host "Granted: Modify Group Membership"
 
 # Apply the new ACL to the OU
-Set-Acl -Path "AD:\$targetOU" -AclObject $acl
+Set-Acl -Path "AD:\$targetOU" -AclObject $acl -Server $childDomainController
 Write-Host "Delegation complete for '$serviceAccount' on '$targetOU'."
+
