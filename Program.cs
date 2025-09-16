@@ -2,21 +2,40 @@ using ADApiService.Models;
 using ADApiService.Services;
 using Microsoft.AspNetCore.Authentication.Negotiate;
 
+public class CorsSettings
+{
+    public bool RestrictOrigins { get; set; }
+    public string[] AllowedOrigins { get; set; }
+}
+
 var builder = WebApplication.CreateBuilder(args);
-var AllowSpecificOrigins = "_myAllowSpecificOrigins";
+var corsSettings = builder.Configuration.GetSection("CorsSettings").Get<CorsSettings>();
 
 // --- Service Configuration ---
 builder.Services.Configure<AdSettings>(builder.Configuration.GetSection("AdSettings"));
 
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy(name: AllowSpecificOrigins,
+    options.AddPolicy(name: "DefaultCorsPolicy",
                       policy =>
                       {
-                          policy.WithOrigins("http://localhost:7000") // The origin of your ADWebPortal
-                                .AllowAnyHeader()
-                                .AllowAnyMethod()
-                                .AllowCredentials(); // Required for Windows Authentication
+                          // Check the setting from appsettings.json
+                          if (corsSettings.RestrictOrigins && corsSettings.AllowedOrigins?.Length > 0)
+                          {
+                              // If true, apply the specific origins
+                              policy.WithOrigins(corsSettings.AllowedOrigins)
+                                    .AllowAnyHeader()
+                                    .AllowAnyMethod()
+                                    .AllowCredentials(); // Credentials can be allowed with specific origins
+                          }
+                          else
+                          {
+                              // If false, allow any origin (less secure, for development)
+                              policy.AllowAnyOrigin()
+                                    .AllowAnyHeader()
+                                    .AllowAnyMethod();
+                              // NOTE: .AllowCredentials() cannot be used with .AllowAnyOrigin()
+                          }
                       });
 });
 
@@ -70,7 +89,7 @@ app.Use((context, next) =>
 
 app.UseRouting();
 
-app.UseCors(AllowSpecificOrigins);
+app.UseCors(DefaultCorsPolicy);
 
 app.UseAuthentication();
 app.UseAuthorization();
