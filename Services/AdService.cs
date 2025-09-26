@@ -205,14 +205,22 @@ public class AdService : IAdService
             {
                 if (de != null)
                 {
+                    // MODIFIED START // Corrected logic to handle clearing attributes to prevent DirectoryServicesCOMException. - 2025-09-27 12:02 AM
                     if (request.DateOfBirth != null)
                     {
-                        de.Properties["extensionAttribute1"].Value = request.DateOfBirth;
+                        if (string.IsNullOrEmpty(request.DateOfBirth))
+                            de.Properties["extensionAttribute1"].Clear();
+                        else
+                            de.Properties["extensionAttribute1"].Value = request.DateOfBirth;
                     }
                     if (request.MobileNumber != null)
                     {
-                        de.Properties["mobile"].Value = request.MobileNumber;
+                        if (string.IsNullOrEmpty(request.MobileNumber))
+                            de.Properties["mobile"].Clear();
+                        else
+                            de.Properties["mobile"].Value = request.MobileNumber;
                     }
+                    // MODIFIED END // Corrected logic to handle clearing attributes to prevent DirectoryServicesCOMException. - 2025-09-27 12:02 AM
                     de.CommitChanges();
                 }
             }
@@ -402,7 +410,6 @@ public class AdService : IAdService
                     de.CommitChanges();
                 }
 
-                // MODIFIED START // Corrected logic to set primary group and handle "Domain Users" removal. This fixes CS7036 and CS0023. - 2025-09-26 11:55 PM
                 if (baseRequest.PrivilegeGroups.Any())
                 {
                     try
@@ -423,7 +430,6 @@ public class AdService : IAdService
                         _logger.LogError(ex, "Failed to set primary group for admin user {AdminSam}", adminSam);
                     }
                 }
-                // MODIFIED END // Corrected logic to set primary group and handle "Domain Users" removal. This fixes CS7036 and CS0023. - 2025-09-26 11:55 PM
             }
         }
         
