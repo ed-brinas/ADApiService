@@ -55,6 +55,10 @@ app.Use(async (context, next) =>
     await next();
 });
 
+// --- Add these lines to serve the frontend ---
+app.UseDefaultFiles(); // Serves index.html for the root URL
+app.UseStaticFiles();  // Serves files from wwwroot
+
 // app.UsePathBase("/api"); // PathBase is supplied by IIS via --pathbase or ASPNETCORE_PATHBASE.
 app.UseRouting();
 app.UseAuthentication();

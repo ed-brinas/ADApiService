@@ -1,0 +1,70 @@
+html, body { 
+    height: 100%; 
+}
+
+body {
+    display: flex; 
+    flex-direction: column; 
+    margin: 0;
+}
+
+.screen {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+}
+
+#login-page {
+    display: flex;
+}
+
+.login-box {
+    width: 100%;
+    max-width: 400px;
+    padding: 2.5rem;
+    border: 1px solid var(--bs-border-color);
+    border-radius: var(--bs-border-radius-lg);
+    background-color: var(--bs-body-bg);
+}
+
+:root,[data-bs-theme=light] {
+    --bs-primary: #005A9E;
+    --bs-secondary: #6c757d;
+}
+
+.btn-primary {
+    --bs-btn-bg: #005A9E;
+    --bs-btn-border-color: #005A9E;
+    --bs-btn-hover-bg: #00487d;
+    --bs-btn-hover-border-color: #00487d;
+    --bs-btn-active-bg: #00487d;
+    --bs-btn-active-border-color: #00487d;
+}
+
+.table-hover>tbody>tr:hover>* {
+    --bs-table-accent-bg: rgba(0,0,0,0.04);
+}
+
+.action-btn-group .btn {
+    margin-right: 0.25rem;
+}
+
+.result-table td {
+    padding: .5rem .5rem; 
+    vertical-align: middle;
+}
+
+#main-app { 
+    flex: 1 0 auto; 
+    display: flex; 
+    flex-direction: column;
+}
+
+main { 
+    flex: 1 0 auto; 
+}
+
+.footer { 
+    flex-shrink: 0; 
+}

@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Active Directory Management Portal</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN" crossorigin="anonymous">
+    <link rel="stylesheet" href="css/site.css">
+</head>
+<body>
+    <div id="loading-spinner" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); z-index: 2000; align-items: center; justify-content: center;">
+        <div class="spinner-border text-light" role="status"><span class="visually-hidden">Loading...</span></div>
+    </div>
+
+    <div id="login-page" class="screen">
+        <div class="login-box text-center shadow-sm">
+            <h1 class="h3 mb-3 fw-normal">Active Directory Management</h1>
+            <div class="alert alert-warning text-start small mb-4">
+                <strong>Notice:</strong> Access to this system is restricted to authorized administrators. Unauthorized access is strictly prohibited. 
+            </div>
+            <p class="mb-4">If you are not an authorized user, please close your browser immediately.</p>
+            <p class="mb-4">Click "Login" to sign in automatically with your domain account.</p>
+            <button class="w-100 btn btn-lg btn-primary" id="login-btn">Login</button>
+        </div>
+    </div>
+    
+    <div id="error-screen" class="screen">
+         <div class="text-center">
+            <h1 id="error-title" class="text-danger"></h1>
+            <p id="error-details" class="lead"></p>
+            <button class="btn btn-secondary mt-3" id="try-again-btn">Go to Login</button>
+        </div>
+    </div>
+
+    <div id="main-app" style="display: none;">
+        <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+            <div class="container-fluid">
+                <a class="navbar-brand" href="#">AD Portal</a>
+                <span class="navbar-text me-auto">| Welcome, <strong id="user-name"></strong></span>
+                <button id="logout-btn" class="btn btn-outline-light">Logout</button>
+            </div>
+        </nav>
+
+        <main class="container mt-4 mb-4">
+            <div id="alert-placeholder"></div>
+            <div class="card">
+                <div class="card-header"><h4>User Management</h4></div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-2"><label for="domain-select" class="form-label">Domain</label><select id="domain-select" class="form-select"></select></div>
+                        <div class="col-md-4"><label for="name-filter" class="form-label">Name / Username / Email</label><input type="text" id="name-filter" class="form-control" placeholder="e.g., jsmith or jsmith@lab.local"></div>
+                        <div class="col-md-2"><label for="status-filter" class="form-label">Account Status</label><select id="status-filter" class="form-select"><option value="" selected>All</option><option value="true">Enabled</option><option value="false">Disabled</option></select></div>
+                        <div class="col-md-2"><label for="admin-filter" class="form-label">Admin Account</label><select id="admin-filter" class="form-select"><option value="" selected>All</option><option value="true">Yes</option><option value="false">No</option></select></div>
+                        <div class="col-md-2 d-flex align-items-end"><button id="search-users-btn" class="btn btn-primary w-100">Search</button></div>
+                    </div>
+                    <hr>
+                    <button id="create-user-show-modal-btn" class="btn btn-success" disabled>Create New User</button>
+                    <div class="table-responsive mt-3">
+                        <table class="table table-hover">
+                            <thead><tr><th>Display Name</th><th>Username</th><th>Domain</th><th>Status</th><th>Admin</th><th>Expires On</th><th>Actions</th></tr></thead>
+                            <tbody id="user-table-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <footer class="footer mt-auto py-3 bg-light border-top">
+            <div class="container text-center">
+                <span class="text-muted">&copy; 2025 Active Directory Management Portal. All rights reserved.</span>
+            </div>
+        </footer>
+    </div>
+
+    <div class="modal" id="create-user-modal" tabindex="-1"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5 class="modal-title">Create New User</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><form id="create-user-form" novalidate><div class="mb-3"><label for="create-domain" class="form-label">Target Domain</label><select class="form-select" id="create-domain" required></select></div><div class="row"><div class="col-md-6 mb-3"><label for="create-firstname" class="form-label">First Name</label><input type="text" class="form-control" id="create-firstname" required></div><div class="col-md-6 mb-3"><label for="create-lastname" class="form-label">Last Name</label><input type="text" class="form-control" id="create-lastname" required></div></div><div class="mb-3"><label for="create-samaccountname" class="form-label">Username (Logon Name)</label><input type="text" class="form-control" id="create-samaccountname" required></div><div class="mb-3"><label for="create-expiration" class="form-label">Account Expiration Date</label><input type="date" class="form-control" id="create-expiration" required></div><div id="create-optional-groups-container" class="mb-3" style="display: none;"><label class="form-label">Optional Groups</label><div id="create-optional-groups-list"></div></div><div id="create-admin-container" class="form-check form-switch mb-3" style="display: none;"><input class="form-check-input" type="checkbox" role="switch" id="create-admin-account"><label class="form-check-label" for="create-admin-account">Create associated admin account</label></div><div class="alert alert-info small">A secure, random password will be generated for the new user account(s).</div></form></div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button><button type="submit" form="create-user-form" class="btn btn-primary">Create User</button></div></div></div></div>
+    
+    <div class="modal" id="edit-user-modal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title">Edit User</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body"><form id="edit-user-form" novalidate>
+            <input type="hidden" id="edit-samaccountname"><input type="hidden" id="edit-domain">
+            <div class="mb-3"><label for="edit-username-display" class="form-label">Username</label><input type="text" class="form-control" id="edit-username-display" readonly></div>
+            <div class="row">
+                <div class="col-md-6 mb-3"><label for="edit-firstname" class="form-label">First Name</label><input type="text" class="form-control" id="edit-firstname" required></div>
+                <div class="col-md-6 mb-3"><label for="edit-lastname" class="form-label">Last Name</label><input type="text" class="form-control" id="edit-lastname" required></div>
+            </div>
+            <div class="mb-3"><label for="edit-expiration" class="form-label">Account Expiration Date</label><input type="date" class="form-control" id="edit-expiration" required></div>
+            <div id="edit-optional-groups-container" class="mb-3" style="display: none;"><label class="form-label">Optional Groups</label><div id="edit-optional-groups-list"></div></div>
+            <div id="edit-admin-container" class="form-check form-switch mb-3" style="display: none;"><input class="form-check-input" type="checkbox" role="switch" id="edit-admin-account"><label class="form-check-label" for="edit-admin-account">Manage associated admin account</label></div>
+        </form></div>
+        <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button><button type="submit" form="edit-user-form" class="btn btn-primary">Save Changes</button></div>
+    </div></div></div>
+
+    <div class="modal" id="create-user-result-modal" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content"><div class="modal-header"><h5 class="modal-title">User Creation Successful</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body" id="create-user-result-body"></div><div class="modal-footer"><button type="button" class="btn btn-primary" data-bs-dismiss="modal">Close</button></div></div></div></div>
+    
+    <div class="modal" id="reset-password-result-modal" tabindex="-1"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5 class="modal-title">Password Reset Successful</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><p>Password for user <strong id="reset-pw-result-username"></strong> has been reset.</p><div class="mb-3"><label for="reset-pw-result-new" class="form-label">New Temporary Password:</label><div class="input-group"><input type="text" class="form-control" id="reset-pw-result-new" readonly><button class="btn btn-outline-secondary" type="button" id="copy-password-btn" title="Copy to clipboard"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-clipboard" viewBox="0 0 16 16"><path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1z"/><path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0z"/></svg></button></div></div><p class="form-text">Please provide this password to the user. They will be required to change it on their next login.</p></div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button></div></div></div></div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js" integrity="sha384-C6RzsynM9kWDrMNeT87bh95OGNyZPhcTNXj1NW7RuBCsyN/o0jlpcV8Qyq46cDfL" crossorigin="anonymous"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>

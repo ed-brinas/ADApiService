@@ -7,10 +7,10 @@
     <InvariantGlobalization>true</InvariantGlobalization>
     <AssemblyName>ADApiService</AssemblyName>
     <RootNamespace>ADApiService</RootNamespace>
-    <!-- Enable generation of XML documentation file for Swagger -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <!-- Suppress warnings for missing XML comments on private members -->
     <NoWarn>$(NoWarn);1591</NoWarn>
+    
+    <StaticWebAssetBasePath>/</StaticWebAssetBasePath>
   </PropertyGroup>
 
   <ItemGroup>
