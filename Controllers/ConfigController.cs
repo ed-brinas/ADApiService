@@ -10,7 +10,7 @@ namespace KeyStone.Controllers;
 /// <summary>
 /// Provides configuration settings to the frontend.
 /// </summary>
-[Route("[controller]")]
+[Route("api/[controller]")]
 [ApiController]
 [Authorize]
 public class ConfigController : ControllerBase

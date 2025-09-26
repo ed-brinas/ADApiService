@@ -9,7 +9,7 @@ namespace KeyStone.Controllers;
 /// <summary>
 /// Handles user authentication and provides user context.
 /// </summary>
-[Route("[controller]")]
+[Route("api/[controller]")]
 [ApiController]
 public class AuthController : ControllerBase
 {
