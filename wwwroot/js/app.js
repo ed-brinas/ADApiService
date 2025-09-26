@@ -188,7 +188,7 @@ document.addEventListener('DOMContentLoaded', () => {
         expirationInput.min = toISODateString(today);
         expirationInput.value = toISODateString(oneYearFromNow);
 
-        // MODIFIED START // Corrected logic to always show Standard groups and conditionally show Privilege groups. - 2025-09-26 11:14 PM
+        // MODIFIED START // Corrected logic to ensure Standard groups always show, and Privilege groups show based on admin checkbox. - 2025-09-26 11:22 PM
         const standardGroupsContainer = document.getElementById('create-standard-groups-container');
         const standardGroupsList = document.getElementById('create-standard-groups-list');
         const adminContainer = document.getElementById('create-admin-container');
@@ -196,28 +196,29 @@ document.addEventListener('DOMContentLoaded', () => {
         const privilegeGroupsContainer = document.getElementById('create-privilege-groups-container');
         const privilegeGroupsList = document.getElementById('create-privilege-groups-list');
 
-        // Always show standard groups if they exist
+        // Reset visibility
+        standardGroupsContainer.style.display = 'none';
+        adminContainer.style.display = 'none';
+        privilegeGroupsContainer.style.display = 'none';
+
+        // Populate and show Standard groups if they exist
         if (config.optionalGroupsForStandard && config.optionalGroupsForStandard.length > 0) {
             standardGroupsContainer.style.display = 'block';
             standardGroupsList.innerHTML = config.optionalGroupsForStandard.map(g => `<div class="form-check"><input class="form-check-input" type="checkbox" value="${g}" id="create-standard-group-${g}"><label class="form-check-label" for="create-standard-group-${g}">${g}</label></div>`).join('');
-        } else {
-            standardGroupsContainer.style.display = 'none';
         }
 
-        // Only show admin-related options to high privilege users
+        // Show admin-related options only to high privilege users
         if (currentUser.isHighPrivilege) {
             adminContainer.style.display = 'block';
+
+            // Populate Privilege groups if they exist
             if (config.optionalGroupsForHighPrivilege && config.optionalGroupsForHighPrivilege.length > 0) {
                  privilegeGroupsList.innerHTML = config.optionalGroupsForHighPrivilege.map(g => `<div class="form-check"><input class="form-check-input" type="checkbox" value="${g}" id="create-privilege-group-${g}"><label class="form-check-label" for="create-privilege-group-${g}">${g}</label></div>`).join('');
             }
-             // Show privilege groups only if admin account checkbox is checked
+             // Show privilege groups container only if the admin checkbox is checked
              privilegeGroupsContainer.style.display = adminCheckbox.checked ? 'block' : 'none';
-
-        } else {
-            adminContainer.style.display = 'none';
-            privilegeGroupsContainer.style.display = 'none';
         }
-        // MODIFIED END // Corrected logic to always show Standard groups and conditionally show Privilege groups. - 2025-09-26 11:14 PM
+        // MODIFIED END // Corrected logic to ensure Standard groups always show, and Privilege groups show based on admin checkbox. - 2025-09-26 11:22 PM
     };
 
     const handleShowEditModal = async (sam, domain) => {
@@ -241,19 +242,25 @@ document.addEventListener('DOMContentLoaded', () => {
             expirationInput.min = toISODateString(today);
             expirationInput.value = formatDateForInput(userDetails.accountExpirationDate) || toISODateString(new Date(today.setFullYear(today.getFullYear() + 1)));
 
+            // MODIFIED START // Corrected logic to ensure Standard groups always show, and Privilege groups show based on admin checkbox. - 2025-09-26 11:22 PM
             const standardGroupsContainer = document.getElementById('edit-standard-groups-container');
             const standardGroupsList = document.getElementById('edit-standard-groups-list');
+            const adminContainer = document.getElementById('edit-admin-container');
+            const adminCheckbox = document.getElementById('edit-admin-account');
+            const privilegeGroupsContainer = document.getElementById('edit-privilege-groups-container');
+            
+            // Reset visibility
+            standardGroupsContainer.style.display = 'none';
+            adminContainer.style.display = 'none';
+            privilegeGroupsContainer.style.display = 'none';
+
+            // Populate and show Standard groups if they exist
             if (config.optionalGroupsForStandard && config.optionalGroupsForStandard.length > 0) {
                 standardGroupsContainer.style.display = 'block';
                 standardGroupsList.innerHTML = config.optionalGroupsForStandard.map(g => `<div class="form-check"><input class="form-check-input" type="checkbox" value="${g}" id="edit-standard-group-${g}" ${userDetails.memberOf.includes(g) ? 'checked' : ''}><label class="form-check-label" for="edit-standard-group-${g}">${g}</label></div>`).join('');
-            } else {
-                standardGroupsContainer.style.display = 'none';
             }
 
-            const adminContainer = document.getElementById('edit-admin-container');
-            const privilegeGroupsContainer = document.getElementById('edit-privilege-groups-container');
-            const adminCheckbox = document.getElementById('edit-admin-account');
-
+            // Show admin-related options only to high privilege users
             if (currentUser.isHighPrivilege) {
                 adminContainer.style.display = 'block';
                 adminCheckbox.checked = userDetails.hasAdminAccount;
@@ -262,13 +269,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (config.optionalGroupsForHighPrivilege && config.optionalGroupsForHighPrivilege.length > 0) {
                      privilegeGroupsList.innerHTML = config.optionalGroupsForHighPrivilege.map(g => `<div class="form-check"><input class="form-check-input" type="checkbox" value="${g}" id="edit-privilege-group-${g}" ${userDetails.memberOf.includes(g) ? 'checked' : ''}><label class="form-check-label" for="edit-privilege-group-${g}">${g}</label></div>`).join('');
                 }
-
+                
+                // Show privilege groups container only if the admin checkbox is checked
                 privilegeGroupsContainer.style.display = adminCheckbox.checked ? 'block' : 'none';
-
-            } else {
-                adminContainer.style.display = 'none';
-                privilegeGroupsContainer.style.display = 'none';
             }
+            // MODIFIED END // Corrected logic to ensure Standard groups always show, and Privilege groups show based on admin checkbox. - 2025-09-26 11:22 PM
+            
             editUserModal.show();
         } catch (error) {
             showAlert(`Failed to load user details: ${error.detail || error.message}`);
@@ -345,11 +351,9 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // MODIFIED START // Corrected to gather selected groups from both standard and privilege lists. - 2025-09-26 11:14 PM
         const standardGroups = Array.from(form.querySelectorAll('#create-standard-groups-list input:checked')).map(cb => cb.value);
         const privilegeGroups = Array.from(form.querySelectorAll('#create-privilege-groups-list input:checked')).map(cb => cb.value);
         const optionalGroups = [...new Set([...standardGroups, ...privilegeGroups])];
-        // MODIFIED END // Corrected to gather selected groups from both standard and privilege lists. - 2025-09-26 11:14 PM
 
         const data = {
             domain: form.querySelector('#create-domain').value,
@@ -424,14 +428,12 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('create-user-form').addEventListener('submit', handleCreateSubmit);
     document.getElementById('edit-user-form').addEventListener('submit', handleEditSubmit);
 
-    // MODIFIED START // Added event listener for admin checkbox in Create User modal. - 2025-09-26 11:14 PM
     const createAdminCheckbox = document.getElementById('create-admin-account');
     if(createAdminCheckbox) {
         createAdminCheckbox.addEventListener('change', (e) => {
             document.getElementById('create-privilege-groups-container').style.display = e.target.checked ? 'block' : 'none';
         });
     }
-    // MODIFIED END // Added event listener for admin checkbox in Create User modal. - 2025-09-26 11:14 PM
 
     const editAdminCheckbox = document.getElementById('edit-admin-account');
     if(editAdminCheckbox) {
