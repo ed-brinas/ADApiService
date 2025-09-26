@@ -1,5 +1,4 @@
 using KeyStone.Models;
-using KeyStone.Models;
 using KeyStone.Services;
 using Microsoft.AspNetCore.Authentication.Negotiate;
 
@@ -11,9 +10,11 @@ builder.Services.AddControllers();
 builder.Services.AddScoped<IAdService, AdService>();
 
 // --- Authentication & Authorization ---
-//builder.Services
-//    .AddAuthentication(NegotiateDefaults.AuthenticationScheme)
-//    .AddNegotiate();
+// This single registration works for both Kestrel and IIS.
+// Kestrel will use Negotiate. IIS integration will automatically
+// override this and use its own handler.
+builder.Services.AddAuthentication(NegotiateDefaults.AuthenticationScheme)
+   .AddNegotiate();
 
 builder.Services.AddAuthorization(options =>
 {
@@ -23,7 +24,6 @@ builder.Services.AddAuthorization(options =>
 });
 
 // --- Swagger for API Documentation ---
-// Keep registration in all envs, but guard XML include to avoid FileNotFound at startup.
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
@@ -45,7 +45,7 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-// Simple request origin logger (harmless without CORS)
+// Simple request origin logger
 app.Use(async (context, next) =>
 {
     var origin = context.Request.Headers["Origin"].FirstOrDefault();
@@ -57,13 +57,15 @@ app.Use(async (context, next) =>
 });
 
 // --- Add these lines to serve the frontend ---
-app.UseDefaultFiles(); // Serves index.html for the root URL
-app.UseStaticFiles();  // Serves files from wwwroot
+app.UseDefaultFiles();
+app.UseStaticFiles();
 
-// app.UsePathBase("/api"); // PathBase is supplied by IIS via --pathbase or ASPNETCORE_PATHBASE.
 app.UseRouting();
+
+// These must be in this order
 app.UseAuthentication();
 app.UseAuthorization();
+
 app.MapControllers();
 
 app.Run();
