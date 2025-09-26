@@ -234,13 +234,9 @@
                   required
                 />
               </div>
-              <div
-                id="create-optional-groups-container"
-                class="mb-3"
-                style="display: none"
-              >
-                <label class="form-label">Optional Groups</label>
-                <div id="create-optional-groups-list"></div>
+              <div id="create-standard-groups-container" class="mb-3">
+                <label class="form-label">Standard Optional Groups</label>
+                <div id="create-standard-groups-list"></div>
               </div>
               <div
                 id="create-admin-container"
@@ -253,8 +249,16 @@
                   role="switch"
                   id="create-admin-account"
                 /><label class="form-check-label" for="create-admin-account"
-                  >Enable Administrator Access</label
+                  >Create JIT (just-in-time) Account</label
                 >
+              </div>
+              <div
+                id="create-privilege-groups-container"
+                class="mb-3"
+                style="display: none"
+              >
+                <label class="form-label">Privilege Optional Groups</label>
+                <div id="create-privilege-groups-list"></div>
               </div>
               <div class="alert alert-info small">
                 A secure, random password will be generated for the new user
@@ -356,7 +360,6 @@
                   required
                 />
               </div>
-
               <div id="edit-standard-groups-container" class="mb-3">
                 <label class="form-label">Standard User Optional Groups</label>
                 <div id="edit-standard-groups-list"></div>
@@ -372,7 +375,7 @@
                   role="switch"
                   id="edit-admin-account"
                 /><label class="form-check-label" for="edit-admin-account"
-                  >Enable Administrator Access</label
+                  >Create JIT (just-in-time) Account</label
                 >
               </div>
               <div
