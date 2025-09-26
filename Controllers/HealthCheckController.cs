@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
-namespace KeyStone.Controllers;
+namespace KeyStone.Controllers
 {
     /// <summary>
     /// Provides a simple endpoint to verify that the API is running.
