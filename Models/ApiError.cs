@@ -1,4 +1,4 @@
-namespace ADApiService.Models;
+namespace KeyStone.Models;
 
 /// <summary>
 /// Represents a standardized API error response.

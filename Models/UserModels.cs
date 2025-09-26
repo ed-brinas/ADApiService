@@ -1,6 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace ADApiService.Models;
+namespace KeyStone.Models;
 
 #region API Payloads
 

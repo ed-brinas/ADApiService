@@ -1,4 +1,4 @@
-using ADApiService.Models;
+using KeyStone.Models;
 using Microsoft.Extensions.Options;
 using System.DirectoryServices.AccountManagement;
 using System.Security.Claims;
@@ -16,7 +16,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 // using Microsoft.Extensions.Logging; // if needed
 
-namespace ADApiService.Services;
+namespace KeyStone.Services;
 
 /// <summary>
 /// Service implementation for interacting with Active Directory.

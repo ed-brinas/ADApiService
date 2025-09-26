@@ -1,9 +1,9 @@
-using ADApiService.Models;
-using ADApiService.Services;
+using KeyStone.Models;
+using KeyStone.Services;
 using Microsoft.AspNetCore.Mvc;
 using System.DirectoryServices.AccountManagement;
 
-namespace ADApiService.Controllers;
+namespace KeyStone.Controllers;
 
 /// <summary>
 /// Manages user lifecycle operations in Active Directory.

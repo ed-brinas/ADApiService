@@ -1,10 +1,10 @@
-using ADApiService.Models;
+using KeyStone.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using System.Security.Claims;
 using System.DirectoryServices.AccountManagement;
 
-namespace ADApiService.Controllers;
+namespace KeyStone.Controllers;
 
 /// <summary>
 /// Handles user authentication and provides user context.

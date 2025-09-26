@@ -1,7 +1,7 @@
 using System.Security.Claims;
-using ADApiService.Models;
+using KeyStone.Models;
 
-namespace ADApiService.Services;
+namespace KeyStone.Services;
 
 /// <summary>
 /// Defines the contract for the Active Directory service.

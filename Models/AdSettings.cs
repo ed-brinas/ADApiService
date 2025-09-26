@@ -1,4 +1,4 @@
-namespace ADApiService.Models;
+namespace KeyStone.Models;
 
 /// <summary>
 /// Maps to the AdSettings section in appsettings.json, providing strongly-typed access to configuration.
