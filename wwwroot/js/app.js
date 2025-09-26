@@ -2,7 +2,9 @@ $(document).ready(function () {
     let userContext = {};
     let appConfig = {};
 
-    // Initial check for user authentication and context
+    // --- INITIALIZATION ---
+
+    // 1. Check if the user is authenticated
     function initializeApp() {
         $.ajax({
             url: "/api/auth/me",
@@ -11,7 +13,7 @@ $(document).ready(function () {
                 userContext = data;
                 $('#username-display').text(userContext.name);
                 $('#main-content').show();
-                fetchAppConfig();
+                fetchAppConfig(); // 2. If authenticated, get the app config
             },
             error: function () {
                 $('#main-content').hide();
@@ -20,15 +22,17 @@ $(document).ready(function () {
         });
     }
 
-    // Fetch configuration settings from the backend
+    // 2. Fetch configuration from the backend (domains, groups, etc.)
     function fetchAppConfig() {
         $.get("/api/config/settings", function (data) {
             appConfig = data;
-            populateDomainFilters(appConfig.domains);
+            populateDomainFilters(appConfig.domains); // 3. Populate filters
+        }).fail(function (xhr) {
+             showAlert(`Error fetching application configuration: ${extractError(xhr)}`, "danger");
         });
     }
 
-    // Populate domain dropdowns
+    // 3. Populate the main domain filter dropdown
     function populateDomainFilters(domains) {
         const domainFilter = $('#domain-filter');
         domainFilter.empty().append('<option value="">All Domains</option>');
@@ -37,7 +41,10 @@ $(document).ready(function () {
         });
     }
 
-    // Fetch and display the list of users based on filters
+
+    // --- CORE UI FUNCTIONS ---
+
+    // Fetches and displays the list of users based on current filters
     function listUsers() {
         const params = {
             domain: $('#domain-filter').val(),
@@ -45,6 +52,11 @@ $(document).ready(function () {
             statusFilter: $('#status-filter').val(),
             hasAdminAccount: $('#admin-account-filter').val()
         };
+
+        // Only include domain if one is selected, otherwise AD will search all domains
+        if (!params.domain) {
+            delete params.domain;
+        }
 
         const queryString = $.param(params);
         $.get(`/api/users/list?${queryString}`, function (users) {
@@ -57,17 +69,17 @@ $(document).ready(function () {
             users.forEach(user => {
                 const row = `
                     <tr>
-                        <td>${user.displayName}</td>
+                        <td>${user.displayName || 'N/A'}</td>
                         <td>${user.samAccountName}</td>
                         <td>${user.isEnabled ? '<span class="badge bg-success">Enabled</span>' : '<span class="badge bg-secondary">Disabled</span>'}</td>
                         <td>${user.hasAdminAccount ? '<i class="bi bi-shield-lock-fill text-primary"></i> Yes' : 'No'}</td>
                         <td>
-                            <button class="btn btn-sm btn-primary action-btn" data-action="edit" data-sam="${user.samAccountName}" data-domain="${params.domain}"><i class="bi bi-pencil-square"></i> Edit</button>
-                            <button class="btn btn-sm btn-info action-btn" data-action="reset-password" data-sam="${user.samAccountName}" data-domain="${params.domain}"><i class="bi bi-key-fill"></i> Reset Password</button>
-                            <button class="btn btn-sm btn-warning action-btn" data-action="unlock" data-sam="${user.samAccountName}" data-domain="${params.domain}"><i class="bi bi-unlock-fill"></i> Unlock</button>
+                            <button class="btn btn-sm btn-primary action-btn" data-action="edit" data-sam="${user.samAccountName}" data-domain="${params.domain || appConfig.domains[0]}"><i class="bi bi-pencil-square"></i> Edit</button>
+                            <button class="btn btn-sm btn-info action-btn" data-action="reset-password" data-sam="${user.samAccountName}" data-domain="${params.domain || appConfig.domains[0]}"><i class="bi bi-key-fill"></i> Reset Password</button>
+                            <button class="btn btn-sm btn-warning action-btn" data-action="unlock" data-sam="${user.samAccountName}" data-domain="${params.domain || appConfig.domains[0]}"><i class="bi bi-unlock-fill"></i> Unlock</button>
                             ${user.isEnabled 
-                                ? `<button class="btn btn-sm btn-danger action-btn" data-action="disable" data-sam="${user.samAccountName}" data-domain="${params.domain}"><i class="bi bi-person-x-fill"></i> Disable</button>`
-                                : `<button class="btn btn-sm btn-success action-btn" data-action="enable" data-sam="${user.samAccountName}" data-domain="${params.domain}"><i class="bi bi-person-check-fill"></i> Enable</button>`
+                                ? `<button class="btn btn-sm btn-danger action-btn" data-action="disable" data-sam="${user.samAccountName}" data-domain="${params.domain || appConfig.domains[0]}"><i class="bi bi-person-x-fill"></i> Disable</button>`
+                                : `<button class="btn btn-sm btn-success action-btn" data-action="enable" data-sam="${user.samAccountName}" data-domain="${params.domain || appConfig.domains[0]}"><i class="bi bi-person-check-fill"></i> Enable</button>`
                             }
                         </td>
                     </tr>
@@ -77,46 +89,50 @@ $(document).ready(function () {
         });
     }
 
-    // Show the user modal for either creating or editing a user
+    // --- MODAL LOGIC ---
+
+    // Sets up and displays the user modal for either 'create' or 'edit' mode
     function showUserModal(mode, userData = null) {
         $('#user-form')[0].reset();
         $('#modal-mode').val(mode);
         $('#sam-account-name').prop('readonly', mode === 'edit');
         $('#domain-select').prop('disabled', mode === 'edit');
         $('#user-modal .is-invalid').removeClass('is-invalid');
+        $('#edit-optional-groups-container').hide();
 
-        // Populate domains
+
+        // Populate domains dropdown in the modal
         $('#domain-select').empty();
         appConfig.domains.forEach(d => $('#domain-select').append(`<option value="${d}">${d}</option>`));
 
         // Populate Standard Group Checkboxes
         const standardGroupsContainer = $('#standard-groups-container');
-        standardGroupsContainer.find('.form-check').remove(); // Clear existing
+        standardGroupsContainer.find('.form-check').remove();
         if (appConfig.optionalGroupsForStandard && appConfig.optionalGroupsForStandard.length > 0) {
             appConfig.optionalGroupsForStandard.forEach(group => {
-                standardGroupsContainer.append(`
-                    <div class="form-check form-check-inline">
+                standardGroupsContainer.append(
+                    `<div class="form-check form-check-inline">
                         <input class="form-check-input standard-group-checkbox" type="checkbox" value="${group}" id="std-group-${group}">
                         <label class="form-check-label" for="std-group-${group}">${group}</label>
-                    </div>
-                `);
+                    </div>`
+                );
             });
             standardGroupsContainer.show();
         } else {
             standardGroupsContainer.hide();
         }
         
-        // Populate High-Privilege Group Checkboxes
+        // Populate High-Privilege Group Checkboxes (if applicable)
         const highPrivilegeGroupsContainer = $('#edit-optional-groups-container');
         highPrivilegeGroupsContainer.find('.form-check').remove();
         if (userContext.isHighPrivilege && appConfig.optionalGroupsForHighPrivilege && appConfig.optionalGroupsForHighPrivilege.length > 0) {
             appConfig.optionalGroupsForHighPrivilege.forEach(group => {
-                highPrivilegeGroupsContainer.append(`
-                     <div class="form-check form-check-inline">
+                highPrivilegeGroupsContainer.append(
+                    `<div class="form-check form-check-inline">
                         <input class="form-check-input high-privilege-group-checkbox" type="checkbox" value="${group}" id="hp-group-${group}">
                         <label class="form-check-label" for="hp-group-${group}">${group}</label>
-                    </div>
-                `);
+                    </div>`
+                );
             });
             $('#privilege-section').show();
         } else {
@@ -132,18 +148,7 @@ $(document).ready(function () {
         }
     }
 
-    // Toggle visibility of high-privilege groups based on the admin access switch
-    $('#manage-admin-account-checkbox').on('change', function() {
-        if ($(this).is(':checked')) {
-            $('#edit-optional-groups-container').slideDown();
-        } else {
-            $('#edit-optional-groups-container').slideUp();
-            // Uncheck all high-privilege groups when hiding
-            $('.high-privilege-group-checkbox').prop('checked', false);
-        }
-    });
-
-    // Fetch detailed user info for the edit modal
+    // Fetches detailed user info and fills the modal for editing
     function fetchAndPopulateUserDetails(domain, samAccountName) {
         $.get(`/api/users/details/${domain}/${samAccountName}`, function (details) {
             $('#original-sam-account-name').val(details.samAccountName);
@@ -151,21 +156,16 @@ $(document).ready(function () {
             $('#domain-select').val(domain);
             $('#first-name').val(details.firstName);
             $('#last-name').val(details.lastName);
-            
-            // Populate new fields
             $('#mobile').val(details.mobileNumber);
             if (details.dateOfBirth) {
-                // The date input requires 'YYYY-MM-DD' format
                 $('#dob').val(details.dateOfBirth.split('T')[0]); 
             }
 
-            // Check the correct group checkboxes
             details.memberOf.forEach(groupName => {
                 $(`.standard-group-checkbox[value="${groupName}"]`).prop('checked', true);
                 $(`.high-privilege-group-checkbox[value="${groupName}"]`).prop('checked', true);
             });
             
-            // Set the admin account checkbox state
             const hasAdmin = details.hasAdminAccount;
             $('#manage-admin-account-checkbox').prop('checked', hasAdmin);
             if (hasAdmin) {
@@ -180,21 +180,20 @@ $(document).ready(function () {
         });
     }
 
-    // Handle the save button click for both create and edit
-    $('#save-user-button').on('click', function () {
+    // Handles the save button click for both create and edit modes
+    function saveUser() {
         const form = $('#user-form');
         if (!form[0].checkValidity()) {
             form[0].reportValidity();
             return;
         }
 
-        // --- Mobile Number Validation ---
         const mobileInput = $('#mobile');
         const mobileValue = mobileInput.val();
-        const mobileRegex = /^\\+966\\d{9}$/;
+        const mobileRegex = /^\+966\d{9}$/; // Regex for +966 followed by 9 digits
         if (mobileValue && !mobileRegex.test(mobileValue)) {
             mobileInput.addClass('is-invalid');
-            return; // Stop submission
+            return;
         } else {
             mobileInput.removeClass('is-invalid');
         }
@@ -202,7 +201,6 @@ $(document).ready(function () {
         const mode = $('#modal-mode').val();
         const sam = (mode === 'edit') ? $('#original-sam-account-name').val() : $('#sam-account-name').val();
 
-        // Collect selected optional groups
         let selectedGroups = [];
         $('.standard-group-checkbox:checked').each(function() {
             selectedGroups.push($(this).val());
@@ -218,8 +216,8 @@ $(document).ready(function () {
             samAccountName: sam,
             firstName: $('#first-name').val(),
             lastName: $('#last-name').val(),
-            dateOfBirth: $('#dob').val(), // Get DOB value
-            mobileNumber: mobileValue,    // Get validated mobile value
+            dateOfBirth: $('#dob').val(),
+            mobileNumber: mobileValue,
             optionalGroups: selectedGroups
         };
 
@@ -245,15 +243,15 @@ $(document).ready(function () {
                 if (mode === 'create' && response.initialPassword) {
                    showPasswordModal(response);
                 }
-                listUsers(); // Refresh the user list
+                listUsers();
             },
             error: function (xhr) {
                 showAlert(`Error: ${extractError(xhr)}`, 'danger');
             }
         });
-    });
+    }
 
-    // Show modal with newly created passwords
+    // Shows modal with newly created passwords
     function showPasswordModal(response) {
         let content = `<p><strong>Standard Account (${response.samAccountName}):</strong> <kbd>${response.initialPassword}</kbd></p>`;
         if (response.adminAccountName) {
@@ -263,11 +261,22 @@ $(document).ready(function () {
         $('#password-modal').modal('show');
     }
 
-    // --- Event Handlers ---
+    // --- EVENT HANDLERS ---
+
     $('#filter-button').on('click', listUsers);
     $('#create-user-button').on('click', () => showUserModal('create'));
+    $('#save-user-button').on('click', saveUser);
 
-    // Delegated event handler for action buttons in the user table
+    $('#manage-admin-account-checkbox').on('change', function() {
+        if ($(this).is(':checked')) {
+            $('#edit-optional-groups-container').slideDown();
+        } else {
+            $('#edit-optional-groups-container').slideUp();
+            $('.high-privilege-group-checkbox').prop('checked', false);
+        }
+    });
+
+    // Delegated event handler for all action buttons in the user table
     $('#user-table-body').on('click', '.action-btn', function () {
         const action = $(this).data('action');
         const sam = $(this).data('sam');
@@ -280,10 +289,11 @@ $(document).ready(function () {
             return;
         }
 
-        let url, method, successMessage;
+        let url, method, successMessage, confirmationMessage;
+        
         switch (action) {
             case 'reset-password':
-                if (!confirm(`Are you sure you want to reset the password for ${sam}?`)) return;
+                confirmationMessage = `Are you sure you want to reset the password for ${sam}?`;
                 url = '/api/users/reset-password';
                 method = 'POST';
                 break;
@@ -293,7 +303,7 @@ $(document).ready(function () {
                 successMessage = `Account ${sam} has been unlocked.`;
                 break;
             case 'disable':
-                if (!confirm(`Are you sure you want to disable the account ${sam}?`)) return;
+                confirmationMessage = `Are you sure you want to disable the account ${sam}?`;
                 url = '/api/users/disable';
                 method = 'POST';
                 successMessage = `Account ${sam} has been disabled.`;
@@ -305,6 +315,10 @@ $(document).ready(function () {
                 break;
             default:
                 return;
+        }
+
+        if (confirmationMessage && !confirm(confirmationMessage)) {
+            return;
         }
 
         $.ajax({
@@ -326,22 +340,20 @@ $(document).ready(function () {
         });
     });
 
-    // --- Helper Functions ---
+    // --- HELPER FUNCTIONS ---
 
-    // Extracts a user-friendly error from an AJAX response
     function extractError(xhr) {
         if (xhr.responseJSON && xhr.responseJSON.message) {
             return xhr.responseJSON.message + (xhr.responseJSON.details ? ` (${xhr.responseJSON.details})` : '');
         }
-        return xhr.statusText;
+        return xhr.statusText || 'An unknown error occurred.';
     }
 
-    // Displays a dismissible alert at the top of the page
     function showAlert(message, type) {
         const alertPlaceholder = $('#alert-placeholder');
         const wrapper = document.createElement('div');
         wrapper.innerHTML = [
-            `<div class="alert alert-${type} alert-dismissible" role="alert">`,
+            `<div class="alert alert-${type} alert-dismissible fade show" role="alert">`,
             `   <div>${message}</div>`,
             '   <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>',
             '</div>'
@@ -349,6 +361,6 @@ $(document).ready(function () {
         alertPlaceholder.append(wrapper);
     }
 
-    // --- App Initialization ---
+    // --- START THE APP ---
     initializeApp();
 });
