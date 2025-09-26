@@ -27,11 +27,14 @@ public class AdService : IAdService
         return await Task.Run(() =>
         {
             var users = new List<UserListItem>();
-            using var context = new PrincipalContext(ContextType.Domain, domain);
+            // This context is for the domain-wide admin check
+            using var domainContext = new PrincipalContext(ContextType.Domain, domain);
             
             foreach (var searchOu in _adSettings.Provisioning.SearchBaseOus)
             {
-                using var searcher = new PrincipalSearcher(new UserPrincipal(context));
+                // This context is scoped to the specific OU for the user search
+                using var ouContext = new PrincipalContext(ContextType.Domain, domain, searchOu);
+                using var searcher = new PrincipalSearcher(new UserPrincipal(ouContext));
                 
                 foreach (var result in searcher.FindAll())
                 {
@@ -41,7 +44,7 @@ public class AdService : IAdService
                         if (!string.IsNullOrEmpty(nameFilter) && !(user.Name?.Contains(nameFilter, StringComparison.OrdinalIgnoreCase) ?? false)) continue;
                         if (statusFilter.HasValue && user.Enabled != statusFilter.Value) continue;
 
-                        var adminExists = CheckIfAdminAccountExists(context, user.SamAccountName);
+                        var adminExists = CheckIfAdminAccountExists(domainContext, user.SamAccountName);
                         if (hasAdminAccount.HasValue && adminExists != hasAdminAccount.Value) continue;
 
                         users.Add(new UserListItem
