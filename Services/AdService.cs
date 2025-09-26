@@ -17,7 +17,7 @@ public class AdService : IAdService
 
     public AdService(IOptions<AdSettings> adSettings, ILogger<AdService> logger)
     {
-        _adSettings = adSettings;
+        _adSettings = adSettings.Value; // CORRECTED: Access the .Value property
         _logger = logger;
     }
 
@@ -32,8 +32,6 @@ public class AdService : IAdService
             foreach (var searchOu in _adSettings.Provisioning.SearchBaseOus)
             {
                 using var searcher = new PrincipalSearcher(new UserPrincipal(context));
-                // A more specific search context could be set here if needed, e.g., by OU
-                // searcher.QueryFilter = new UserPrincipal(context) { DistinguishedName = $"OU=Users,OU=_Managed,{GetDomainComponents(domain)}" };
                 
                 foreach (var result in searcher.FindAll())
                 {
@@ -76,11 +74,9 @@ public class AdService : IAdService
                     return null;
                 }
 
-                // Use a DirectorySearcher to get extra attributes not on UserPrincipal
                 using var de = user.GetUnderlyingObject() as DirectoryEntry;
                 if (de == null) return null;
 
-                // Load specific properties to avoid fetching everything
                 var searcher = new DirectorySearcher(de)
                 {
                     PropertiesToLoad = { "extensionAttribute1", "mobile" }
@@ -142,12 +138,10 @@ public class AdService : IAdService
             
             var initialPassword = GeneratePassword();
             user.SetPassword(initialPassword);
-            user.ExpirePasswordNow(); // CORRECTED: This is a method call
+            user.ExpirePasswordNow();
             
-            // Save the user first in the default container
             user.Save();
 
-            // Now move the user to the correct OU
             using (var de = user.GetUnderlyingObject() as DirectoryEntry)
             {
                 if (de != null)
@@ -158,7 +152,6 @@ public class AdService : IAdService
                         de.MoveTo(parent);
                     }
                     
-                    // Set extended attributes after moving
                     if (!string.IsNullOrEmpty(request.DateOfBirth))
                     {
                         de.Properties["extensionAttribute1"].Value = request.DateOfBirth;
@@ -171,7 +164,6 @@ public class AdService : IAdService
                 }
             }
             
-            // Add to optional groups
             foreach (var groupName in request.OptionalGroups)
             {
                 AddUserToGroup(context, user.SamAccountName, groupName);
@@ -208,7 +200,6 @@ public class AdService : IAdService
                 throw new KeyNotFoundException($"User '{request.SamAccountName}' not found in domain '{request.Domain}'.");
             }
 
-            // Update extended attributes
             using (var de = user.GetUnderlyingObject() as DirectoryEntry)
             {
                 if (de != null)
@@ -225,13 +216,11 @@ public class AdService : IAdService
                 }
             }
 
-            // Update group memberships
             var allOptionalGroups = _adSettings.Provisioning.OptionalGroupsForStandard
                 .Concat(_adSettings.Provisioning.OptionalGroupsForHighPrivilege).ToList();
             
             UpdateGroupMembership(context, user, request.OptionalGroups, allOptionalGroups);
 
-            // Manage Admin Account
             var adminExists = CheckIfAdminAccountExists(context, request.SamAccountName);
             if (isHighPrivilege)
             {
@@ -262,7 +251,7 @@ public class AdService : IAdService
 
             var newPassword = GeneratePassword();
             user.SetPassword(newPassword);
-            user.ExpirePasswordNow(); // CORRECTED: This is a method call
+            user.ExpirePasswordNow();
             user.Save();
             
             return newPassword;
@@ -289,7 +278,7 @@ public class AdService : IAdService
 
             var newPassword = GeneratePassword();
             adminUser.SetPassword(newPassword);
-            adminUser.ExpirePasswordNow(); // CORRECTED: This is a method call
+            adminUser.ExpirePasswordNow();
             adminUser.Save();
             
             return newPassword;
@@ -398,10 +387,9 @@ public class AdService : IAdService
         };
         var adminPassword = GeneratePassword();
         adminUser.SetPassword(adminPassword);
-        adminUser.ExpirePasswordNow(); // CORRECTED: This is a method call
+        adminUser.ExpirePasswordNow();
         adminUser.Save();
 
-        // Move the admin user to its OU
         using (var de = adminUser.GetUnderlyingObject() as DirectoryEntry)
         {
             if (de != null)
@@ -499,13 +487,11 @@ public class AdService : IAdService
         var random = new Random();
         var res = new StringBuilder();
 
-        // Ensure at least one of each character type
         res.Append(upper[random.Next(upper.Length)]);
         res.Append(lower[random.Next(lower.Length)]);
         res.Append(number[random.Next(number.Length)]);
         res.Append(special[random.Next(special.Length)]);
 
-        // Fill the rest of the password
         string allChars = upper + lower + number + special;
         for (int i = 0; i < 12; i++)
         {
