@@ -17,7 +17,7 @@ public class AdService : IAdService
 
     public AdService(IOptions<AdSettings> adSettings, ILogger<AdService> logger)
     {
-        _adSettings = adSettings.Value; // CORRECTED: Access the .Value property
+        _adSettings = adSettings.Value;
         _logger = logger;
     }
 
@@ -27,12 +27,10 @@ public class AdService : IAdService
         return await Task.Run(() =>
         {
             var users = new List<UserListItem>();
-            // This context is for the domain-wide admin check
             using var domainContext = new PrincipalContext(ContextType.Domain, domain);
             
             foreach (var searchOu in _adSettings.Provisioning.SearchBaseOus)
             {
-                // This context is scoped to the specific OU for the user search
                 using var ouContext = new PrincipalContext(ContextType.Domain, domain, searchOu);
                 using var searcher = new PrincipalSearcher(new UserPrincipal(ouContext));
                 
@@ -40,7 +38,6 @@ public class AdService : IAdService
                 {
                     if (result is UserPrincipal user)
                     {
-                        // Filtering logic
                         if (!string.IsNullOrEmpty(nameFilter) && !(user.Name?.Contains(nameFilter, StringComparison.OrdinalIgnoreCase) ?? false)) continue;
                         if (statusFilter.HasValue && user.Enabled != statusFilter.Value) continue;
 
@@ -82,16 +79,12 @@ public class AdService : IAdService
 
                 var searcher = new DirectorySearcher(de)
                 {
-                    // MODIFIED START // Added extensionAttribute1 to properties - 2025-09-26 10:45 PM
                     PropertiesToLoad = { "extensionAttribute1", "mobile" }
-                    // MODIFIED END // Added extensionAttribute1 to properties - 2025-09-26 10:45 PM
                 };
                 var result = searcher.FindOne();
                 
-                // MODIFIED START // Added DateOfBirth and MobileNumber - 2025-09-26 10:45 PM
                 var dateOfBirth = result?.Properties["extensionAttribute1"]?.Count > 0 ? result.Properties["extensionAttribute1"][0].ToString() : null;
                 var mobileNumber = result?.Properties["mobile"]?.Count > 0 ? result.Properties["mobile"][0].ToString() : null;
-                // MODIFIED END // Added DateOfBirth and MobileNumber - 2025-09-26 10:45 PM
 
                 var userDetails = new UserDetailModel
                 {
@@ -101,10 +94,8 @@ public class AdService : IAdService
                     DisplayName = user.DisplayName,
                     UserPrincipalName = user.UserPrincipalName,
                     EmailAddress = user.EmailAddress,
-                    // MODIFIED START // Added DateOfBirth and MobileNumber - 2025-09-26 10:45 PM
                     DateOfBirth = dateOfBirth,
                     MobileNumber = mobileNumber,
-                    // MODIFIED END // Added DateOfBirth and MobileNumber - 2025-09-26 10:45 PM
                     IsEnabled = user.Enabled ?? false,
                     IsLockedOut = user.IsAccountLockedOut(),
                     MemberOf = user.GetGroups().Select(g => g.SamAccountName).ToList(),
@@ -161,7 +152,6 @@ public class AdService : IAdService
                         de.MoveTo(parent);
                     }
                     
-                    // MODIFIED START // Added DateOfBirth and MobileNumber - 2025-09-26 10:45 PM
                     if (!string.IsNullOrEmpty(request.DateOfBirth))
                     {
                         de.Properties["extensionAttribute1"].Value = request.DateOfBirth;
@@ -170,7 +160,6 @@ public class AdService : IAdService
                     {
                         de.Properties["mobile"].Value = request.MobileNumber;
                     }
-                    // MODIFIED END // Added DateOfBirth and MobileNumber - 2025-09-26 10:45 PM
                     de.CommitChanges();
                 }
             }
@@ -215,7 +204,6 @@ public class AdService : IAdService
             {
                 if (de != null)
                 {
-                    // MODIFIED START // Added DateOfBirth and MobileNumber - 2025-09-26 10:45 PM
                     if (request.DateOfBirth != null)
                     {
                         de.Properties["extensionAttribute1"].Value = request.DateOfBirth;
@@ -224,7 +212,6 @@ public class AdService : IAdService
                     {
                         de.Properties["mobile"].Value = request.MobileNumber;
                     }
-                    // MODIFIED END // Added DateOfBirth and MobileNumber - 2025-09-26 10:45 PM
                     de.CommitChanges();
                 }
             }
@@ -362,21 +349,21 @@ public class AdService : IAdService
             {
                 try
                 {
-                    var group = GroupPrincipal.FindByIdentity(context, IdentityType.Sid, sid);
-                    if (group != null && _adSettings.AccessControl.HighPrivilegeGroups.Contains(group.SamAccountName, StringComparer.OrdinalIgnoreCase))
-                    {
-                        return true;
-                    }
+                     var group = GroupPrincipal.FindByIdentity(context, IdentityType.Sid, sid);
+                     if (group != null && _adSettings.AccessControl.HighPrivilegeGroups.Contains(group.SamAccountName, StringComparer.OrdinalIgnoreCase))
+                     {
+                         return true;
+                     }
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogTrace(ex, "Could not resolve SID {Sid} to a group name. This is expected if the group is in a different domain.", sid);
+                    _logger.LogTrace(ex, "Could not resolve SID {Sid} to a group name.", sid);
                 }
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "CRITICAL: Could not connect to forest root domain '{Domain}' to determine user privilege.", _adSettings.ForestRootDomain);
+            _logger.LogError(ex, "Error connecting to forest root domain '{Domain}' to determine user privilege.", _adSettings.ForestRootDomain);
         }
         return false;
     }
@@ -413,10 +400,50 @@ public class AdService : IAdService
                     de.MoveTo(parent);
                     de.CommitChanges();
                 }
+
+                // MODIFIED START // Added logic to set primary group and remove from "Domain Users". - 2025-09-26 11:48 PM
+                if (baseRequest.PrivilegeGroups.Any())
+                {
+                    try
+                    {
+                        var firstPrivilegeGroup = baseRequest.PrivilegeGroups.First();
+                        using var group = GroupPrincipal.FindByIdentity(context, firstPrivilegeGroup);
+                        if (group != null)
+                        {
+                            var groupSid = group.Sid;
+                            // Active Directory stores the Primary Group ID as the RID of the group SID.
+                            var rid = new System.Security.Principal.SecurityIdentifier(groupSid.ToString()).AccountDomainSid.GetBinaryForm().Last();
+                            de.Properties["primaryGroupID"].Value = rid;
+                            de.CommitChanges();
+                            _logger.LogInformation("Set primary group for {AdminSam} to {GroupName}", adminSam, firstPrivilegeGroup);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to set primary group for admin user {AdminSam}", adminSam);
+                    }
+                }
+                // MODIFIED END // Added logic to set primary group and remove from "Domain Users". - 2025-09-26 11:48 PM
             }
         }
         
-        AddUserToGroup(context, adminSam, _adSettings.Provisioning.AdminGroup);
+        foreach (var groupName in baseRequest.PrivilegeGroups)
+        {
+            AddUserToGroup(context, adminSam, groupName);
+        }
+
+        // MODIFIED START // Added logic to remove the -a account from the default "Domain Users" group. - 2025-09-26 11:48 PM
+        try
+        {
+            RemoveUserFromGroup(context, adminSam, "Domain Users");
+            _logger.LogInformation("Removed {AdminSam} from 'Domain Users' group.", adminSam);
+        }
+        catch(Exception ex)
+        {
+            _logger.LogError(ex, "Failed to remove {AdminSam} from 'Domain Users' group.", adminSam);
+        }
+        // MODIFIED END // Added logic to remove the -a account from the default "Domain Users" group. - 2025-09-26 11:48 PM
+
 
         return new CreateUserResponse { SamAccountName = adminSam, InitialPassword = adminPassword };
     }
