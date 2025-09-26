@@ -17,7 +17,7 @@ public class AdService : IAdService
 
     public AdService(IOptions<AdSettings> adSettings, ILogger<AdService> logger)
     {
-        _adSettings = adSettings.Value;
+        _adSettings = adSettings;
         _logger = logger;
     }
 
@@ -128,7 +128,6 @@ public class AdService : IAdService
             }
 
             using var context = new PrincipalContext(ContextType.Domain, request.Domain);
-            var ou = _adSettings.Provisioning.DefaultUserOuFormat.Replace("{domain-components}", GetDomainComponents(request.Domain));
             
             using var user = new UserPrincipal(context)
             {
@@ -138,21 +137,28 @@ public class AdService : IAdService
                 DisplayName = $"{request.FirstName} {request.LastName}",
                 UserPrincipalName = $"{request.SamAccountName}@{request.Domain}",
                 Enabled = true,
-                PasswordNotRequired = false,
-                ExpirePasswordNow = true
+                PasswordNotRequired = false
             };
             
             var initialPassword = GeneratePassword();
             user.SetPassword(initialPassword);
+            user.ExpirePasswordNow(); // CORRECTED: This is a method call
+            
+            // Save the user first in the default container
+            user.Save();
 
-            // Save the user in the specified OU
-            user.Save(ou);
-
-            // Set extended attributes using DirectoryEntry after the user is created
+            // Now move the user to the correct OU
             using (var de = user.GetUnderlyingObject() as DirectoryEntry)
             {
                 if (de != null)
                 {
+                    var ouDn = _adSettings.Provisioning.DefaultUserOuFormat.Replace("{domain-components}", GetDomainComponents(request.Domain));
+                    using (var parent = new DirectoryEntry($"LDAP://{request.Domain}/{ouDn}"))
+                    {
+                        de.MoveTo(parent);
+                    }
+                    
+                    // Set extended attributes after moving
                     if (!string.IsNullOrEmpty(request.DateOfBirth))
                     {
                         de.Properties["extensionAttribute1"].Value = request.DateOfBirth;
@@ -256,7 +262,7 @@ public class AdService : IAdService
 
             var newPassword = GeneratePassword();
             user.SetPassword(newPassword);
-            user.ExpirePasswordNow = true;
+            user.ExpirePasswordNow(); // CORRECTED: This is a method call
             user.Save();
             
             return newPassword;
@@ -283,7 +289,7 @@ public class AdService : IAdService
 
             var newPassword = GeneratePassword();
             adminUser.SetPassword(newPassword);
-            adminUser.ExpirePasswordNow = true;
+            adminUser.ExpirePasswordNow(); // CORRECTED: This is a method call
             adminUser.Save();
             
             return newPassword;
@@ -381,7 +387,6 @@ public class AdService : IAdService
     private CreateUserResponse CreateAdminAccount(PrincipalContext context, CreateUserRequest baseRequest)
     {
         var adminSam = $"{baseRequest.SamAccountName}-a";
-        var adminOu = _adSettings.Provisioning.AdminUserOuFormat.Replace("{domain-components}", GetDomainComponents(baseRequest.Domain));
         
         using var adminUser = new UserPrincipal(context)
         {
@@ -390,11 +395,25 @@ public class AdService : IAdService
             UserPrincipalName = $"{adminSam}@{baseRequest.Domain}",
             Enabled = true,
             PasswordNotRequired = false,
-            ExpirePasswordNow = true
         };
         var adminPassword = GeneratePassword();
         adminUser.SetPassword(adminPassword);
-        adminUser.Save(adminOu);
+        adminUser.ExpirePasswordNow(); // CORRECTED: This is a method call
+        adminUser.Save();
+
+        // Move the admin user to its OU
+        using (var de = adminUser.GetUnderlyingObject() as DirectoryEntry)
+        {
+            if (de != null)
+            {
+                var adminOuDn = _adSettings.Provisioning.AdminUserOuFormat.Replace("{domain-components}", GetDomainComponents(baseRequest.Domain));
+                using (var parent = new DirectoryEntry($"LDAP://{baseRequest.Domain}/{adminOuDn}"))
+                {
+                    de.MoveTo(parent);
+                    de.CommitChanges();
+                }
+            }
+        }
         
         AddUserToGroup(context, adminSam, _adSettings.Provisioning.AdminGroup);
 
