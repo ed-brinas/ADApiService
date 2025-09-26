@@ -14,13 +14,14 @@ public class CreateUserRequest
     public string FirstName { get; set; } = string.Empty;
     [Required]
     public string LastName { get; set; } = string.Empty;
-    public string? DateOfBirth { get; set; } // New field
-    // MODIFIED START // Added RegularExpression for validation - 2025-09-26 10:42 PM
+    public string? DateOfBirth { get; set; }
     [RegularExpression(@"^\+966\d{9}$", ErrorMessage = "Mobile number must be in the format +966xxxxxxxxx")]
-    // MODIFIED END // Added RegularExpression for validation - 2025-09-26 10:42 PM
-    public string? MobileNumber { get; set; } // New field
+    public string? MobileNumber { get; set; }
     public bool CreateAdminAccount { get; set; }
     public List<string> OptionalGroups { get; set; } = new();
+    // MODIFIED START // Added property to carry selected privilege groups for the -a account. This fixes CS1061. - 2025-09-26 11:55 PM
+    public List<string> PrivilegeGroups { get; set; } = new();
+    // MODIFIED END // Added property to carry selected privilege groups for the -a account. This fixes CS1061. - 2025-09-26 11:55 PM
 }
 
 public class UpdateUserRequest
@@ -29,11 +30,9 @@ public class UpdateUserRequest
     public string Domain { get; set; } = string.Empty;
     [Required]
     public string SamAccountName { get; set; } = string.Empty;
-    public string? DateOfBirth { get; set; } // New field
-    // MODIFIED START // Added RegularExpression for validation - 2025-09-26 10:42 PM
+    public string? DateOfBirth { get; set; }
     [RegularExpression(@"^\+966\d{9}$", ErrorMessage = "Mobile number must be in the format +966xxxxxxxxx")]
-    // MODIFIED END // Added RegularExpression for validation - 2025-09-26 10:42 PM
-    public string? MobileNumber { get; set; } // New field
+    public string? MobileNumber { get; set; }
     public bool HasAdminAccount { get; set; }
     public List<string> OptionalGroups { get; set; } = new();
 }
@@ -80,8 +79,8 @@ public class UserDetailModel
     public string? DisplayName { get; set; }
     public string? UserPrincipalName { get; set; }
     public string? EmailAddress { get; set; }
-    public string? DateOfBirth { get; set; } // New field
-    public string? MobileNumber { get; set; } // New field
+    public string? DateOfBirth { get; set; }
+    public string? MobileNumber { get; set; }
     public bool IsEnabled { get; set; }
     public bool IsLockedOut { get; set; }
     public bool HasAdminAccount { get; set; }

@@ -2,6 +2,7 @@ using KeyStone.Models;
 using Microsoft.Extensions.Options;
 using System.DirectoryServices;
 using System.DirectoryServices.AccountManagement;
+using System.Linq;
 using System.Security.Claims;
 using System.Text;
 
@@ -401,19 +402,18 @@ public class AdService : IAdService
                     de.CommitChanges();
                 }
 
-                // MODIFIED START // Added logic to set primary group and remove from "Domain Users". - 2025-09-26 11:48 PM
+                // MODIFIED START // Corrected logic to set primary group and handle "Domain Users" removal. This fixes CS7036 and CS0023. - 2025-09-26 11:55 PM
                 if (baseRequest.PrivilegeGroups.Any())
                 {
                     try
                     {
                         var firstPrivilegeGroup = baseRequest.PrivilegeGroups.First();
-                        using var group = GroupPrincipal.FindByIdentity(context, firstPrivilegeGroup);
-                        if (group != null)
+                        using var groupPrincipal = GroupPrincipal.FindByIdentity(context, firstPrivilegeGroup);
+                        if (groupPrincipal != null)
                         {
-                            var groupSid = group.Sid;
-                            // Active Directory stores the Primary Group ID as the RID of the group SID.
-                            var rid = new System.Security.Principal.SecurityIdentifier(groupSid.ToString()).AccountDomainSid.GetBinaryForm().Last();
-                            de.Properties["primaryGroupID"].Value = rid;
+                            var sidString = groupPrincipal.Sid.ToString();
+                            var rid = sidString.Split('-').Last();
+                            de.Properties["primaryGroupID"].Value = int.Parse(rid);
                             de.CommitChanges();
                             _logger.LogInformation("Set primary group for {AdminSam} to {GroupName}", adminSam, firstPrivilegeGroup);
                         }
@@ -423,7 +423,7 @@ public class AdService : IAdService
                         _logger.LogError(ex, "Failed to set primary group for admin user {AdminSam}", adminSam);
                     }
                 }
-                // MODIFIED END // Added logic to set primary group and remove from "Domain Users". - 2025-09-26 11:48 PM
+                // MODIFIED END // Corrected logic to set primary group and handle "Domain Users" removal. This fixes CS7036 and CS0023. - 2025-09-26 11:55 PM
             }
         }
         
@@ -432,7 +432,6 @@ public class AdService : IAdService
             AddUserToGroup(context, adminSam, groupName);
         }
 
-        // MODIFIED START // Added logic to remove the -a account from the default "Domain Users" group. - 2025-09-26 11:48 PM
         try
         {
             RemoveUserFromGroup(context, adminSam, "Domain Users");
@@ -442,8 +441,6 @@ public class AdService : IAdService
         {
             _logger.LogError(ex, "Failed to remove {AdminSam} from 'Domain Users' group.", adminSam);
         }
-        // MODIFIED END // Added logic to remove the -a account from the default "Domain Users" group. - 2025-09-26 11:48 PM
-
 
         return new CreateUserResponse { SamAccountName = adminSam, InitialPassword = adminPassword };
     }
