@@ -1,25 +1,14 @@
 using KeyStone.Models;
 using Microsoft.Extensions.Options;
+using System.DirectoryServices;
 using System.DirectoryServices.AccountManagement;
 using System.Security.Claims;
 using System.Text;
 
-// Added
-using System;
-using System.Collections.Generic;
-using System.DirectoryServices;
-using System.DirectoryServices.AccountManagement;
-using System.Globalization;
-using System.Linq;
-using System.Security.Principal;
-using System.Text.RegularExpressions;
-using System.Threading;
-// using Microsoft.Extensions.Logging; // if needed
-
 namespace KeyStone.Services;
 
 /// <summary>
-/// Service implementation for interacting with Active Directory.
+/// Implements the IAdService interface to provide Active Directory user management functionality.
 /// </summary>
 public class AdService : IAdService
 {
@@ -32,92 +21,46 @@ public class AdService : IAdService
         _logger = logger;
     }
 
-    #region User Listing and Details
-
-    public async Task<IEnumerable<UserListItem>> ListUsersAsync(string domain, string? nameFilter, bool? statusFilter, bool? hasAdminAccountFilter)
+    /// <inheritdoc />
+    public async Task<IEnumerable<UserListItem>> ListUsersAsync(string domain, string? nameFilter, bool? statusFilter, bool? hasAdminAccount)
     {
         return await Task.Run(() =>
         {
-            var userDictionary = new Dictionary<string, UserListItem>();
-            var domainDc = $"DC={domain.Replace(".", ",DC=")}";
-
-            var relevantOus = _adSettings.Provisioning.SearchBaseOus
-                .Where(ou => ou.EndsWith(domainDc, StringComparison.OrdinalIgnoreCase))
-                .ToList();
-
-            if (!relevantOus.Any())
+            var users = new List<UserListItem>();
+            using var context = new PrincipalContext(ContextType.Domain, domain);
+            
+            foreach (var searchOu in _adSettings.Provisioning.SearchBaseOus)
             {
-                _logger.LogWarning("No SearchBaseOus configured for domain '{Domain}'. No users will be listed.", domain);
-                return Enumerable.Empty<UserListItem>();
-            }
-
-            foreach (var ou in relevantOus)
-            {
-                try
+                using var searcher = new PrincipalSearcher(new UserPrincipal(context));
+                // A more specific search context could be set here if needed, e.g., by OU
+                // searcher.QueryFilter = new UserPrincipal(context) { DistinguishedName = $"OU=Users,OU=_Managed,{GetDomainComponents(domain)}" };
+                
+                foreach (var result in searcher.FindAll())
                 {
-                    using var context = new PrincipalContext(ContextType.Domain, domain, ou);
-                    
-                    var searchPrincipals = new List<UserPrincipal>();
-                    if (!string.IsNullOrWhiteSpace(nameFilter))
+                    if (result is UserPrincipal user)
                     {
-                        // Add principals for each attribute to search
-                        searchPrincipals.Add(new UserPrincipal(context) { SamAccountName = $"*{nameFilter}*" });
-                        searchPrincipals.Add(new UserPrincipal(context) { DisplayName = $"*{nameFilter}*" });
-                        searchPrincipals.Add(new UserPrincipal(context) { EmailAddress = $"*{nameFilter}*" });
-                    }
-                    else
-                    {
-                        searchPrincipals.Add(new UserPrincipal(context)); // Empty filter for all users
-                    }
+                        // Filtering logic
+                        if (!string.IsNullOrEmpty(nameFilter) && !(user.Name?.Contains(nameFilter, StringComparison.OrdinalIgnoreCase) ?? false)) continue;
+                        if (statusFilter.HasValue && user.Enabled != statusFilter.Value) continue;
 
-                    foreach(var userPrinc in searchPrincipals)
-                    {
-                        if (statusFilter.HasValue)
+                        var adminExists = CheckIfAdminAccountExists(context, user.SamAccountName);
+                        if (hasAdminAccount.HasValue && adminExists != hasAdminAccount.Value) continue;
+
+                        users.Add(new UserListItem
                         {
-                            userPrinc.Enabled = statusFilter;
-                        }
-
-                        using var searcher = new PrincipalSearcher(userPrinc);
-                        foreach (var result in searcher.FindAll().OfType<UserPrincipal>())
-                        {
-                            using(result)
-                            {
-                                if (result.SamAccountName != null && !userDictionary.ContainsKey(result.SamAccountName))
-                                {
-                                    var adminSam = $"{result.SamAccountName}-a";
-                                    using var domainContext = new PrincipalContext(ContextType.Domain, domain);
-                                    var hasAdminAccount = UserPrincipal.FindByIdentity(domainContext, IdentityType.SamAccountName, adminSam) != null;
-
-                                    userDictionary[result.SamAccountName] = new UserListItem
-                                    {
-                                        DisplayName = result.DisplayName,
-                                        SamAccountName = result.SamAccountName,
-                                        EmailAddress = result.EmailAddress,
-                                        Enabled = result.Enabled ?? false,
-                                        HasAdminAccount = hasAdminAccount,
-                                        AccountExpirationDate = result.AccountExpirationDate
-                                    };
-                                }
-                            }
-                        }
+                            SamAccountName = user.SamAccountName,
+                            DisplayName = user.DisplayName,
+                            IsEnabled = user.Enabled ?? false,
+                            HasAdminAccount = adminExists
+                        });
                     }
                 }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error searching for users in OU '{OU}' for domain '{Domain}'.", ou, domain);
-                }
             }
-
-            IEnumerable<UserListItem> finalUsers = userDictionary.Values;
-            if (hasAdminAccountFilter.HasValue)
-            {
-                finalUsers = finalUsers.Where(u => u.HasAdminAccount == hasAdminAccountFilter.Value);
-            }
-
-            return finalUsers.OrderBy(u => u.DisplayName);
+            return users.OrderBy(u => u.DisplayName);
         });
     }
 
+    /// <inheritdoc />
     public async Task<UserDetailModel?> GetUserDetailsAsync(ClaimsPrincipal callingUser, string domain, string samAccountName)
     {
         return await Task.Run(() =>
@@ -125,814 +68,431 @@ public class AdService : IAdService
             try
             {
                 using var context = new PrincipalContext(ContextType.Domain, domain);
-                using var user = UserPrincipal.FindByIdentity(context, IdentityType.SamAccountName, samAccountName);
+                var user = UserPrincipal.FindByIdentity(context, IdentityType.SamAccountName, samAccountName);
 
                 if (user == null)
                 {
-                    _logger.LogWarning("User details requested for non-existent user '{SamAccountName}' in domain '{Domain}'.", samAccountName, domain);
+                    _logger.LogWarning("User details requested for non-existent user {SamAccountName} in domain {Domain}", samAccountName, domain);
                     return null;
                 }
-                
-                var adminSam = $"{user.SamAccountName}-a";
-                var hasAdminAccount = UserPrincipal.FindByIdentity(context, IdentityType.SamAccountName, adminSam) != null;
-                var memberOf = user.GetGroups().Select(g => g.SamAccountName).Where(s => s != null).ToList();
 
-                // New logic for the feature flag
-                var canReset = IsUserHighPrivilege(callingUser) && hasAdminAccount;
+                // Use a DirectorySearcher to get extra attributes not on UserPrincipal
+                using var de = user.GetUnderlyingObject() as DirectoryEntry;
+                if (de == null) return null;
 
-                return new UserDetailModel
+                // Load specific properties to avoid fetching everything
+                var searcher = new DirectorySearcher(de)
                 {
-                    DisplayName = user.DisplayName,
+                    PropertiesToLoad = { "extensionAttribute1", "mobile" }
+                };
+                var result = searcher.FindOne();
+                
+                var dateOfBirth = result?.Properties["extensionAttribute1"]?.Count > 0 ? result.Properties["extensionAttribute1"][0].ToString() : null;
+                var mobileNumber = result?.Properties["mobile"]?.Count > 0 ? result.Properties["mobile"][0].ToString() : null;
+
+                var userDetails = new UserDetailModel
+                {
                     SamAccountName = user.SamAccountName,
                     FirstName = user.GivenName,
                     LastName = user.Surname,
-                    HasAdminAccount = hasAdminAccount,
-                    MemberOf = memberOf!,
-                    AccountExpirationDate = user.AccountExpirationDate,
-                    CanAutoResetPassword = canReset
+                    DisplayName = user.DisplayName,
+                    UserPrincipalName = user.UserPrincipalName,
+                    EmailAddress = user.EmailAddress,
+                    DateOfBirth = dateOfBirth,
+                    MobileNumber = mobileNumber,
+                    IsEnabled = user.Enabled ?? false,
+                    IsLockedOut = user.IsAccountLockedOut(),
+                    MemberOf = user.GetGroups().Select(g => g.SamAccountName).ToList(),
+                    HasAdminAccount = CheckIfAdminAccountExists(context, samAccountName)
                 };
+
+                return userDetails;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error getting details for user '{SamAccountName}' in domain '{Domain}'.", samAccountName, domain);
+                _logger.LogError(ex, "Error getting user details for {SamAccountName} in domain {Domain}", samAccountName, domain);
                 return null;
             }
         });
     }
 
-    #endregion
-
-    #region User Creation and Updates
-
+    /// <inheritdoc />
     public async Task<CreateUserResponse> CreateUserAsync(ClaimsPrincipal callingUser, CreateUserRequest request)
     {
-        if (!IsUserHighPrivilege(callingUser) && (request.CreateAdminAccount || request.OptionalGroups?.Any() == true))
-        {
-            _logger.LogWarning("SECURITY: User '{User}' attempted to create user with elevated permissions.", callingUser.Identity?.Name);
-            throw new InvalidOperationException("You do not have permission to create users with optional groups or associated admin accounts.");
-        }
-
         return await Task.Run(() =>
         {
-            var response = new CreateUserResponse();
-            var generatedPassword = GenerateRandomPassword();
-
-            try
+            var isHighPrivilege = IsUserHighPrivilege(callingUser);
+            if (request.CreateAdminAccount && !isHighPrivilege)
             {
-                var ou = GetOuForDomain(_adSettings.Provisioning.DefaultUserOuFormat, request.Domain);
-                using var context = new PrincipalContext(ContextType.Domain, request.Domain, ou);
-                
-                _logger.LogInformation("Attempting to create user '{SamAccountName}' in OU '{OU}'.", request.SamAccountName, ou);
-                
-                using var user = new UserPrincipal(context)
-                {
-                    SamAccountName = request.SamAccountName,
-                    GivenName = request.FirstName,
-                    Surname = request.LastName,
-                    DisplayName = $"{request.FirstName} {request.LastName}",
-                    Name = $"{request.FirstName} {request.LastName}",
-                    UserPrincipalName = $"{request.SamAccountName}@{request.Domain}",
-                    PasswordNotRequired = false,
-                    UserCannotChangePassword = false,
-                    Enabled = true,
-                    AccountExpirationDate = request.AccountExpirationDate
-                };
-                user.SetPassword(generatedPassword);
-                user.Save();
-                user.ExpirePasswordNow();
-                user.Save();
-                
-                response.UserAccount = new UserAccountDetails
-                {
-                    SamAccountName = user.SamAccountName,
-                    DisplayName = user.DisplayName,
-                    UserPrincipalName = user.UserPrincipalName,
-                    InitialPassword = generatedPassword
-                };
-
-                if (IsUserHighPrivilege(callingUser) && request.OptionalGroups?.Any() == true)
-                {
-                    AddUserToGroups(user, request.OptionalGroups, request.Domain);
-                    response.GroupsAssociated.AddRange(request.OptionalGroups);
-                }
-
-                if (IsUserHighPrivilege(callingUser) && request.CreateAdminAccount)
-                {
-                    response.AdminAccount = CreateAssociatedAdminAccount(request, request.OptionalGroups);
-                }
-                
-                response.Message = $"Successfully created user '{request.SamAccountName}'.";
-                return response;
+                throw new InvalidOperationException("You are not authorized to create privileged accounts.");
             }
-            catch (Exception ex)
+
+            using var context = new PrincipalContext(ContextType.Domain, request.Domain);
+            var ou = _adSettings.Provisioning.DefaultUserOuFormat.Replace("{domain-components}", GetDomainComponents(request.Domain));
+            
+            using var user = new UserPrincipal(context)
             {
-                _logger.LogError(ex, "AD ERROR on CreateUserAsync for '{SamAccountName}'.", request.SamAccountName);
-                throw; 
+                SamAccountName = request.SamAccountName,
+                GivenName = request.FirstName,
+                Surname = request.LastName,
+                DisplayName = $"{request.FirstName} {request.LastName}",
+                UserPrincipalName = $"{request.SamAccountName}@{request.Domain}",
+                Enabled = true,
+                PasswordNotRequired = false,
+                ExpirePasswordNow = true
+            };
+            
+            var initialPassword = GeneratePassword();
+            user.SetPassword(initialPassword);
+
+            // Save the user in the specified OU
+            user.Save(ou);
+
+            // Set extended attributes using DirectoryEntry after the user is created
+            using (var de = user.GetUnderlyingObject() as DirectoryEntry)
+            {
+                if (de != null)
+                {
+                    if (!string.IsNullOrEmpty(request.DateOfBirth))
+                    {
+                        de.Properties["extensionAttribute1"].Value = request.DateOfBirth;
+                    }
+                    if (!string.IsNullOrEmpty(request.MobileNumber))
+                    {
+                        de.Properties["mobile"].Value = request.MobileNumber;
+                    }
+                    de.CommitChanges();
+                }
+            }
+            
+            // Add to optional groups
+            foreach (var groupName in request.OptionalGroups)
+            {
+                AddUserToGroup(context, user.SamAccountName, groupName);
+            }
+
+            var response = new CreateUserResponse
+            {
+                SamAccountName = user.SamAccountName,
+                InitialPassword = initialPassword
+            };
+
+            if (request.CreateAdminAccount)
+            {
+                var adminResponse = CreateAdminAccount(context, request);
+                response.AdminAccountName = adminResponse.SamAccountName;
+                response.AdminInitialPassword = adminResponse.InitialPassword;
+            }
+
+            return response;
+        });
+    }
+
+    /// <inheritdoc />
+    public async Task UpdateUserAsync(ClaimsPrincipal callingUser, UpdateUserRequest request)
+    {
+        await Task.Run(() =>
+        {
+            var isHighPrivilege = IsUserHighPrivilege(callingUser);
+            
+            using var context = new PrincipalContext(ContextType.Domain, request.Domain);
+            var user = UserPrincipal.FindByIdentity(context, IdentityType.SamAccountName, request.SamAccountName);
+            if (user == null)
+            {
+                throw new KeyNotFoundException($"User '{request.SamAccountName}' not found in domain '{request.Domain}'.");
+            }
+
+            // Update extended attributes
+            using (var de = user.GetUnderlyingObject() as DirectoryEntry)
+            {
+                if (de != null)
+                {
+                    if (request.DateOfBirth != null)
+                    {
+                        de.Properties["extensionAttribute1"].Value = request.DateOfBirth;
+                    }
+                    if (request.MobileNumber != null)
+                    {
+                        de.Properties["mobile"].Value = request.MobileNumber;
+                    }
+                    de.CommitChanges();
+                }
+            }
+
+            // Update group memberships
+            var allOptionalGroups = _adSettings.Provisioning.OptionalGroupsForStandard
+                .Concat(_adSettings.Provisioning.OptionalGroupsForHighPrivilege).ToList();
+            
+            UpdateGroupMembership(context, user, request.OptionalGroups, allOptionalGroups);
+
+            // Manage Admin Account
+            var adminExists = CheckIfAdminAccountExists(context, request.SamAccountName);
+            if (isHighPrivilege)
+            {
+                if (request.HasAdminAccount && !adminExists)
+                {
+                    var createReq = new CreateUserRequest { SamAccountName = request.SamAccountName, Domain = request.Domain, FirstName = user.GivenName, LastName = user.Surname };
+                    CreateAdminAccount(context, createReq);
+                }
+                else if (!request.HasAdminAccount && adminExists)
+                {
+                    DisableAdminAccount(context, $"{request.SamAccountName}-a");
+                }
             }
         });
     }
     
-    public async Task UpdateUserAsync(ClaimsPrincipal callingUser, UpdateUserRequest request)
-    {
-        if (!IsUserHighPrivilege(callingUser))
-        {
-            _logger.LogWarning("SECURITY: User '{User}' without high-privilege rights attempted to update user '{TargetUser}'.", callingUser.Identity?.Name, request.SamAccountName);
-            throw new InvalidOperationException("You do not have permission to update user group memberships or manage admin accounts.");
-        }
-        
-        await Task.Run(() =>
-        {
-            try
-            {
-                using var context = new PrincipalContext(ContextType.Domain, request.Domain);
-                using var user = UserPrincipal.FindByIdentity(context, IdentityType.SamAccountName, request.SamAccountName);
-
-                if (user == null)
-                {
-                    throw new KeyNotFoundException($"Update failed: User '{request.SamAccountName}' not found in domain '{request.Domain}'.");
-                }
-                
-                user.GivenName = request.FirstName;
-                user.Surname = request.LastName;
-                user.DisplayName = $"{request.FirstName} {request.LastName}";
-                user.AccountExpirationDate = request.AccountExpirationDate;
-                user.Save();
-
-                UpdateGroupMembership(context, user, request.OptionalGroups ?? new List<string>(), request.Domain);
-
-                var adminSam = $"{request.SamAccountName}-a";
-                using var adminUser = UserPrincipal.FindByIdentity(context, IdentityType.SamAccountName, adminSam);
-
-                if (request.ManageAdminAccount)
-                {
-                    if (adminUser == null)
-                    {
-                        _logger.LogInformation("Creating missing admin account for '{SamAccountName}'.", request.SamAccountName);
-                        CreateAssociatedAdminAccount(new CreateUserRequest {
-                            Domain = request.Domain,
-                            FirstName = user.GivenName ?? "Admin",
-                            LastName = user.Surname ?? user.SamAccountName,
-                            SamAccountName = user.SamAccountName,
-                            AccountExpirationDate = request.AccountExpirationDate 
-                        }, request.OptionalGroups);
-                    }
-                }
-                else
-                {
-                    if (adminUser != null)
-                    {
-                        _logger.LogInformation("Deleting admin account for '{SamAccountName}'.", request.SamAccountName);
-                        adminUser.Delete();
-                    }
-                }
-                
-                _logger.LogInformation("Successfully updated user '{SamAccountName}'.", request.SamAccountName);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "AD ERROR on UpdateUserAsync for '{SamAccountName}'.", request.SamAccountName);
-                throw;
-            }
-        });
-    }
-
-    #endregion
-
-    #region Password and Account Status
-
+    /// <inheritdoc />
     public async Task<string> ResetPasswordAsync(UserActionRequest request)
     {
         return await Task.Run(() =>
         {
-            try
+            using var context = new PrincipalContext(ContextType.Domain, request.Domain);
+            var user = UserPrincipal.FindByIdentity(context, IdentityType.SamAccountName, request.SamAccountName);
+            if (user == null)
             {
-                using var context = new PrincipalContext(ContextType.Domain, request.Domain);
-                using var user = UserPrincipal.FindByIdentity(context, IdentityType.SamAccountName, request.SamAccountName);
-
-                if (user == null)
-                {
-                    throw new KeyNotFoundException($"Password reset failed: User '{request.SamAccountName}' not found in domain '{request.Domain}'.");
-                }
-
-                var newPassword = GenerateRandomPassword();
-                user.SetPassword(newPassword);
-                user.ExpirePasswordNow();
-                user.UnlockAccount();
-                user.Save();
-                _logger.LogInformation("Successfully reset password for user '{SamAccountName}'.", request.SamAccountName);
-                return newPassword;
+                throw new KeyNotFoundException($"User '{request.SamAccountName}' not found in domain '{request.Domain}'.");
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "AD ERROR on ResetPasswordAsync for '{SamAccountName}'.", request.SamAccountName);
-                throw;
-            }
+
+            var newPassword = GeneratePassword();
+            user.SetPassword(newPassword);
+            user.ExpirePasswordNow = true;
+            user.Save();
+            
+            return newPassword;
         });
     }
 
+    /// <inheritdoc />
     public async Task<string> ResetAdminPasswordAsync(ClaimsPrincipal callingUser, ResetAdminPasswordRequest request)
     {
-        if (!IsUserHighPrivilege(callingUser))
-        {
-            _logger.LogWarning("SECURITY: User '{User}' without high-privilege rights attempted to reset an admin password for '{TargetUser}'.", callingUser.Identity?.Name, request.SamAccountName);
-            throw new InvalidOperationException("You do not have permission to perform this action.");
-        }
-
         return await Task.Run(() =>
         {
-            try
+            if (!IsUserHighPrivilege(callingUser))
             {
-                var adminOu = GetOuForDomain(_adSettings.Provisioning.AdminUserOuFormat, request.Domain);
-                using var context = new PrincipalContext(ContextType.Domain, request.Domain, adminOu);
-                
-                var adminSam = $"{request.SamAccountName}-a";
-                using var user = UserPrincipal.FindByIdentity(context, IdentityType.SamAccountName, adminSam);
-
-                if (user == null)
-                {
-                    throw new KeyNotFoundException($"Admin account reset failed: User '{adminSam}' not found in the admin OU for domain '{request.Domain}'. The account may exist in a different OU or not at all.");
-                }
-
-                var newPassword = GenerateRandomPassword();
-                user.SetPassword(newPassword);
-                user.UnlockAccount();
-                user.AccountExpirationDate = DateTime.UtcNow.AddDays(30);
-                user.Save();
-                                
-                _logger.LogInformation("Successfully reset password for admin account '{AdminSam}'.", adminSam);
-                return newPassword;
+                throw new InvalidOperationException("You are not authorized to reset admin passwords.");
             }
-            catch (Exception ex)
+
+            using var context = new PrincipalContext(ContextType.Domain, request.Domain);
+            var adminSam = $"{request.SamAccountName}-a";
+            var adminUser = UserPrincipal.FindByIdentity(context, IdentityType.SamAccountName, adminSam);
+            if (adminUser == null)
             {
-                _logger.LogError(ex, "AD ERROR on ResetAdminPasswordAsync for '{SamAccountName}'.", request.SamAccountName);
-                throw;
+                throw new KeyNotFoundException($"Admin account for '{request.SamAccountName}' not found.");
             }
+
+            var newPassword = GeneratePassword();
+            adminUser.SetPassword(newPassword);
+            adminUser.ExpirePasswordNow = true;
+            adminUser.Save();
+            
+            return newPassword;
         });
     }
 
+    /// <inheritdoc />
     public async Task UnlockAccountAsync(UserActionRequest request)
     {
         await Task.Run(() =>
         {
-            try
+            using var context = new PrincipalContext(ContextType.Domain, request.Domain);
+            var user = UserPrincipal.FindByIdentity(context, IdentityType.SamAccountName, request.SamAccountName);
+            if (user == null)
             {
-                using var context = new PrincipalContext(ContextType.Domain, request.Domain);
-                using var user = UserPrincipal.FindByIdentity(context, IdentityType.SamAccountName, request.SamAccountName);
-
-                if (user == null)
-                {
-                    throw new KeyNotFoundException($"Account unlock failed: User '{request.SamAccountName}' not found in domain '{request.Domain}'.");
-                }
-                
-                if(user.IsAccountLockedOut())
-                {
-                    user.UnlockAccount();
-                    user.Save();
-                    _logger.LogInformation("Successfully unlocked account for user '{SamAccountName}'.", request.SamAccountName);
-                }
-                else
-                {
-                    _logger.LogInformation("Account for user '{SamAccountName}' was not locked.", request.SamAccountName);
-                }
+                throw new KeyNotFoundException($"User '{request.SamAccountName}' not found in domain '{request.Domain}'.");
             }
-            catch (Exception ex)
+
+            if (user.IsAccountLockedOut())
             {
-                _logger.LogError(ex, "AD ERROR on UnlockAccountAsync for '{SamAccountName}'.", request.SamAccountName);
-                throw;
+                user.UnlockAccount();
             }
         });
     }
 
+    /// <inheritdoc />
     public async Task DisableAccountAsync(UserActionRequest request)
     {
         await Task.Run(() =>
         {
-            try
+            using var context = new PrincipalContext(ContextType.Domain, request.Domain);
+            var user = UserPrincipal.FindByIdentity(context, IdentityType.SamAccountName, request.SamAccountName);
+            if (user == null)
             {
-                using var context = new PrincipalContext(ContextType.Domain, request.Domain);
-                using var user = UserPrincipal.FindByIdentity(context, IdentityType.SamAccountName, request.SamAccountName);
-
-                if (user == null)
-                {
-                    throw new KeyNotFoundException($"Account disable failed: User '{request.SamAccountName}' not found in domain '{request.Domain}'.");
-                }
-
-                if (user.Enabled == true)
-                {
-                    user.Enabled = false;
-                    user.Save();
-                    _logger.LogInformation("Successfully disabled account for user '{SamAccountName}'.", request.SamAccountName);
-                }
-                else
-                {
-                    _logger.LogInformation("Account for user '{SamAccountName}' was already disabled.", request.SamAccountName);
-                }
+                throw new KeyNotFoundException($"User '{request.SamAccountName}' not found in domain '{request.Domain}'.");
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "AD ERROR on DisableAccountAsync for '{SamAccountName}'.", request.SamAccountName);
-                throw;
-            }
+            user.Enabled = false;
+            user.Save();
         });
     }
     
+    /// <inheritdoc />
     public async Task EnableAccountAsync(UserActionRequest request)
     {
         await Task.Run(() =>
         {
-            try
+            using var context = new PrincipalContext(ContextType.Domain, request.Domain);
+            var user = UserPrincipal.FindByIdentity(context, IdentityType.SamAccountName, request.SamAccountName);
+            if (user == null)
             {
-                using var context = new PrincipalContext(ContextType.Domain, request.Domain);
-                using var user = UserPrincipal.FindByIdentity(context, IdentityType.SamAccountName, request.SamAccountName);
-
-                if (user == null)
-                {
-                    throw new KeyNotFoundException($"Account enable failed: User '{request.SamAccountName}' not found in domain '{request.Domain}'.");
-                }
-
-                if (user.Enabled == false)
-                {
-                    user.Enabled = true;
-                    user.Save();
-                    _logger.LogInformation("Successfully enabled account for user '{SamAccountName}'.", request.SamAccountName);
-                }
-                else
-                {
-                    _logger.LogInformation("Account for user '{SamAccountName}' was already enabled.", request.SamAccountName);
-                }
+                throw new KeyNotFoundException($"User '{request.SamAccountName}' not found in domain '{request.Domain}'.");
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "AD ERROR on EnableAccountAsync for '{SamAccountName}'.", request.SamAccountName);
-                throw;
-            }
+            user.Enabled = true;
+            user.Save();
         });
     }
 
-    #endregion
 
-    #region Helper Methods
-    
+    // --- Private Helper Methods ---
+
     private bool IsUserHighPrivilege(ClaimsPrincipal callingUser)
     {
-        var userGroups = GetUserGroupNames(callingUser);
-        return _adSettings.AccessControl.HighPrivilegeGroups.Any(g => userGroups.Contains(g, StringComparer.OrdinalIgnoreCase));
-    }
-
-    private List<string> GetUserGroupNames(ClaimsPrincipal user)
-    {
-        var groupNames = new List<string>();
-        var groupSids = user.FindAll(ClaimTypes.GroupSid).Select(c => c.Value).ToList();
-        var unresolvedSids = new HashSet<string>(groupSids);
-
-        foreach (var domain in _adSettings.Domains)
-        {
-            if (!unresolvedSids.Any()) break;
-
-            try
-            {
-                using var context = new PrincipalContext(ContextType.Domain, domain);
-                var sidsInThisDomain = unresolvedSids.ToList();
-
-                foreach (var sid in sidsInThisDomain)
-                {
-                    try
-                    {
-                        var group = GroupPrincipal.FindByIdentity(context, IdentityType.Sid, sid);
-                        if (group?.SamAccountName != null)
-                        {
-                            groupNames.Add(group.SamAccountName);
-                            unresolvedSids.Remove(sid);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogTrace(ex, "Could not resolve SID {Sid} in domain {Domain}. This is expected if the group belongs to another domain.", sid, domain);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Could not connect to PrincipalContext for domain '{Domain}' while resolving groups in AdService.", domain);
-            }
-        }
-        return groupNames;
-    }
-//
-// REPLACE the entire CreateAssociatedAdminAccount method with this version
-public AdminAccountDetails CreateAssociatedAdminAccount(CreateUserRequest request, List<string>? groupsToAssign = null)
-{
-    var adminOu = GetOuForDomain(_adSettings.Provisioning.AdminUserOuFormat, request.Domain);
-    var adminSam = SafeSam($"{request.SamAccountName}-a");
-    var adminDisplayName = $"admin-{request.FirstName}{request.LastName}".ToLower(CultureInfo.InvariantCulture);
-    var userPrincipalName = $"{adminSam}@{request.Domain}";
-    var generatedPassword = GenerateRandomPassword();
-    var normalizedGroups = NormalizeGroups(groupsToAssign);
-
-    _logger.LogInformation("Attempting to create admin account '{AdminSam}' in OU '{AdminOu}'.", adminSam, adminOu);
-
-    // Keep both contexts alive during the operation:
-    using var ouCtx     = new PrincipalContext(ContextType.Domain, request.Domain, adminOu);
-    using var domainCtx = new PrincipalContext(ContextType.Domain, request.Domain);
-
-    using var adminUser = new UserPrincipal(ouCtx)
-    {
-        SamAccountName        = adminSam,
-        Name                  = adminDisplayName,
-        DisplayName           = adminDisplayName,
-        UserPrincipalName     = userPrincipalName,
-        Enabled               = false,
-        AccountExpirationDate = DateTime.UtcNow.AddDays(30),
-    };
-
-    try
-    {
-        adminUser.Save();
-        _logger.LogInformation("Initial save for admin account '{AdminSam}' complete.", adminSam);
-
-        adminUser.SetPassword(generatedPassword);
-        adminUser.Enabled = true;
-        adminUser.Save();
-        _logger.LogInformation("Password set and account enabled for '{AdminSam}'.", adminSam);
-    }
-    catch (Exception ex)
-    {
-        _logger.LogError(ex, "Failed creating/enabling admin account '{AdminSam}'.", adminSam);
-        throw;
-    }
-
-    // Add to all requested groups (use context-safe helpers)
-    if (normalizedGroups.Count > 0)
-    {
-        foreach (var groupName in normalizedGroups)
-        {
-            try
-            {
-                using var grp = ResolveGroupWithAliveContext(domainCtx, groupName)
-                             ?? ResolveGroupForestWide(groupName);
-                if (grp == null)
-                {
-                    _logger.LogWarning("Group '{Group}' not found (forest-wide). Skipping for '{AdminSam}'.", groupName, adminSam);
-                    continue;
-                }
-
-                // Rebind user by DN into the same context as the group to avoid cross-context issues
-                using var userByDn = UserPrincipal.FindByIdentity(grp.Context ?? domainCtx, IdentityType.DistinguishedName, adminUser.DistinguishedName);
-                if (userByDn == null)
-                {
-                    _logger.LogError("Could not bind user '{AdminSam}' by DN to add to '{Group}'.", adminSam, grp.SamAccountName ?? grp.Name);
-                    continue;
-                }
-
-                var added = TryAddMember(grp, userByDn, adminSam);
-                if (!added)
-                    _logger.LogDebug("'{AdminSam}' is already a member of '{Group}'.", adminSam, grp.SamAccountName ?? grp.Name);
-                else
-                    _logger.LogInformation("Added '{AdminSam}' to group '{Group}'.", adminSam, grp.SamAccountName ?? grp.Name);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to add '{AdminSam}' to group '{Group}'. Continuing.", adminSam, groupName);
-            }
-        }
-    }
-
-    // Set primary group last, then remove Domain Users
-    var candidatePrimary = normalizedGroups.FirstOrDefault();
-    if (!string.IsNullOrWhiteSpace(candidatePrimary))
-    {
-        TrySetPrimaryGroupWithRetries(domainCtx, adminUser, adminSam, candidatePrimary);
-
+        var groupSids = callingUser.FindAll(ClaimTypes.GroupSid).Select(c => c.Value);
         try
         {
-            using var domainUsers = ResolveGroupWithAliveContext(domainCtx, "Domain Users");
-            if (domainUsers != null)
+            using var context = new PrincipalContext(ContextType.Domain, _adSettings.ForestRootDomain);
+            foreach (var sid in groupSids)
             {
-                using var userByDn = UserPrincipal.FindByIdentity(domainCtx, IdentityType.DistinguishedName, adminUser.DistinguishedName);
-                if (userByDn != null && IsMemberOfSameContext(domainUsers, userByDn))
+                try
                 {
-                    domainUsers.Members.Remove(userByDn);
-                    domainUsers.Save();
-                    _logger.LogInformation("Removed '{AdminSam}' from 'Domain Users'.", adminSam);
+                    var group = GroupPrincipal.FindByIdentity(context, IdentityType.Sid, sid);
+                    if (group != null && _adSettings.AccessControl.HighPrivilegeGroups.Contains(group.SamAccountName, StringComparer.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogTrace(ex, "Could not resolve SID {Sid} to a group name. This is expected if the group is in a different domain.", sid);
                 }
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed removing '{AdminSam}' from 'Domain Users' (non-fatal).", adminSam);
+            _logger.LogError(ex, "CRITICAL: Could not connect to forest root domain '{Domain}' to determine user privilege.", _adSettings.ForestRootDomain);
         }
-    }
-    else
-    {
-        _logger.LogInformation("No groups provided to set as primary for '{AdminSam}'. Skipping primary group step.", adminSam);
+        return false;
     }
 
-    _logger.LogInformation("Successfully created and configured admin account '{AdminSam}'.", adminSam);
-
-    return new AdminAccountDetails
+    private bool CheckIfAdminAccountExists(PrincipalContext context, string baseSamAccountName)
     {
-        SamAccountName    = adminSam,
-        DisplayName       = adminDisplayName,
-        UserPrincipalName = userPrincipalName,
-        InitialPassword   = generatedPassword
-    };
-}
-
-// REPLACE your current TrySetPrimaryGroupWithRetries with this version (note the signature change)
-private void TrySetPrimaryGroupWithRetries(
-    PrincipalContext domainCtx,
-    UserPrincipal adminUser,
-    string adminSam,
-    string primaryGroupName)
-{
-    if (primaryGroupName.Equals("Domain Users", StringComparison.OrdinalIgnoreCase))
-    {
-        _logger.LogWarning("'{AdminSam}': Requested primary group is 'Domain Users'. Skipping explicit primary change.", adminSam);
-        return;
+        return UserPrincipal.FindByIdentity(context, IdentityType.SamAccountName, $"{baseSamAccountName}-a") != null;
     }
 
-    using var primaryGroup = ResolveGroupWithAliveContext(domainCtx, primaryGroupName)
-                          ?? ResolveGroupForestWide(primaryGroupName);
-    if (primaryGroup == null)
+    private CreateUserResponse CreateAdminAccount(PrincipalContext context, CreateUserRequest baseRequest)
     {
-        _logger.LogWarning("'{AdminSam}': Primary group '{Group}' not found.", adminSam, primaryGroupName);
-        return;
-    }
-    if (primaryGroup.IsSecurityGroup != true || primaryGroup.GroupScope != GroupScope.Global)
-    {
-        _logger.LogWarning("'{AdminSam}': Group '{Group}' is not a Global Security Group. Skipping primary group set.", adminSam, primaryGroupName);
-        return;
-    }
-
-    using var userByDn = UserPrincipal.FindByIdentity(domainCtx, IdentityType.DistinguishedName, adminUser.DistinguishedName);
-    if (userByDn == null)
-    {
-        _logger.LogError("'{AdminSam}': Could not rebind user by DN in domain context for primary group.", adminSam);
-        return;
-    }
-
-    if (!IsMemberOfSameContext(primaryGroup, userByDn))
-    {
-        var added = TryAddMember(primaryGroup, userByDn, adminSam);
-        if (!added)
+        var adminSam = $"{baseRequest.SamAccountName}-a";
+        var adminOu = _adSettings.Provisioning.AdminUserOuFormat.Replace("{domain-components}", GetDomainComponents(baseRequest.Domain));
+        
+        using var adminUser = new UserPrincipal(context)
         {
-            _logger.LogWarning("'{AdminSam}': Not a member of '{Group}' and could not add. Skipping primary group set.", adminSam, primaryGroupName);
-            return;
+            SamAccountName = adminSam,
+            DisplayName = $"{baseRequest.FirstName} {baseRequest.LastName} (Admin)",
+            UserPrincipalName = $"{adminSam}@{baseRequest.Domain}",
+            Enabled = true,
+            PasswordNotRequired = false,
+            ExpirePasswordNow = true
+        };
+        var adminPassword = GeneratePassword();
+        adminUser.SetPassword(adminPassword);
+        adminUser.Save(adminOu);
+        
+        AddUserToGroup(context, adminSam, _adSettings.Provisioning.AdminGroup);
+
+        return new CreateUserResponse { SamAccountName = adminSam, InitialPassword = adminPassword };
+    }
+
+    private void DisableAdminAccount(PrincipalContext context, string adminSam)
+    {
+        var adminUser = UserPrincipal.FindByIdentity(context, IdentityType.SamAccountName, adminSam);
+        if (adminUser != null)
+        {
+            adminUser.Enabled = false;
+            adminUser.Save();
         }
     }
 
-    const int maxAttempts = 4;
-    var delayMs = 600;
-
-    for (var attempt = 1; attempt <= maxAttempts; attempt++)
+    private void AddUserToGroup(PrincipalContext context, string userName, string groupName)
     {
         try
         {
-            using var userEntry = (DirectoryEntry)userByDn.GetUnderlyingObject(); // fresh each attempt
-            var rid = GetRidFromSid(primaryGroup.Sid);
-            userEntry.Properties["primaryGroupID"].Value = rid;
-            userEntry.CommitChanges();
-
-            _logger.LogInformation("Successfully set primary group for '{AdminSam}' to '{Group}'.", adminSam, primaryGroupName);
-            return;
+            using var group = GroupPrincipal.FindByIdentity(context, groupName);
+            if (group != null && !group.Members.Contains(context, IdentityType.SamAccountName, userName))
+            {
+                group.Members.Add(context, IdentityType.SamAccountName, userName);
+                group.Save();
+            }
         }
-        catch (DirectoryServicesCOMException comEx)
+        catch (Exception ex)
         {
-            if (attempt >= maxAttempts)
-            {
-                _logger.LogError(comEx, "Failed to set primary group for '{AdminSam}' to '{Group}' after {Attempts} attempts.", adminSam, primaryGroupName, attempt);
-                return;
-            }
-            _logger.LogWarning(comEx, "Attempt {Attempt}/{Max} to set primary group for '{AdminSam}' failed. Retrying in {DelayMs} ms.", attempt, maxAttempts, adminSam, delayMs);
-        }
-        catch (ObjectDisposedException ode)
-        {
-            if (attempt >= maxAttempts)
-            {
-                _logger.LogError(ode, "Failed to set primary group for '{AdminSam}' to '{Group}' after {Attempts} attempts (disposed).", adminSam, primaryGroupName, attempt);
-                return;
-            }
-            _logger.LogWarning(ode, "Attempt {Attempt}/{Max} to set primary group for '{AdminSam}' failed due to disposed object. Retrying in {DelayMs} ms.", attempt, maxAttempts, adminSam, delayMs);
-        }
-
-        Thread.Sleep(delayMs);
-        delayMs *= 2;
-    }
-}
-
-// ADD these helpers (do not remove your existing ones if already present)
-
-private static GroupPrincipal? ResolveGroupWithAliveContext(PrincipalContext aliveDomainCtx, string rawInput)
-{
-    var token = rawInput?.Trim();
-    if (string.IsNullOrWhiteSpace(token)) return null;
-
-    return  TryFindGroup(aliveDomainCtx, IdentityType.DistinguishedName, token) ??
-            TryFindGroup(aliveDomainCtx, IdentityType.Sid,              token) ??
-            TryFindGroup(aliveDomainCtx, IdentityType.Guid,             token) ??
-            TryFindGroup(aliveDomainCtx, IdentityType.SamAccountName,   token) ??
-            TryFindGroup(aliveDomainCtx, IdentityType.Name,             token);
-}
-
-private static GroupPrincipal? ResolveGroupForestWide(string rawInput)
-{
-    var dn = TryFindGroupDnViaGlobalCatalog(rawInput?.Trim() ?? string.Empty);
-    if (dn == null) return null;
-
-    var fqdn = ExtractDomainFromDn(dn);
-    var ctx  = new PrincipalContext(ContextType.Domain, fqdn); // intentionally not disposed here; disposed by GroupPrincipal
-    return TryFindGroup(ctx, IdentityType.DistinguishedName, dn);
-}
-
-private static GroupPrincipal? TryFindGroup(PrincipalContext ctx, IdentityType type, string value)
-{
-    try { return GroupPrincipal.FindByIdentity(ctx, type, value); }
-    catch { return null; }
-}
-
-private static bool TryAddMember(GroupPrincipal group, Principal userInSameContext, string adminSamForLog)
-{
-    try
-    {
-        if (IsMemberOfSameContext(group, userInSameContext))
-            return false;
-
-        group.Members.Add(userInSameContext);
-        group.Save();
-        return true;
-    }
-    catch (PrincipalOperationException poe) when (poe.Message.IndexOf("already", StringComparison.OrdinalIgnoreCase) >= 0)
-    {
-        return false;
-    }
-}
-
-private static bool IsMemberOfSameContext(GroupPrincipal group, Principal userInSameContext)
-{
-    try { return userInSameContext.IsMemberOf(group); }
-    catch { return false; }
-}
-
-private static string? TryFindGroupDnViaGlobalCatalog(string nameOrSam)
-{
-    if (string.IsNullOrWhiteSpace(nameOrSam)) return null;
-    try
-    {
-        using var gcRoot = new DirectoryEntry("GC://");
-        using var ds = new DirectorySearcher(gcRoot)
-        {
-            SearchScope = SearchScope.Subtree,
-            Filter = $"(&(objectClass=group)(|(cn={EscapeLdap(nameOrSam)})(name={EscapeLdap(nameOrSam)})(sAMAccountName={EscapeLdap(nameOrSam)})))",
-            PageSize = 200
-        };
-        var res = ds.FindOne();
-        return res?.Properties["distinguishedName"]?.Count > 0
-            ? res.Properties["distinguishedName"][0]?.ToString()
-            : null;
-    }
-    catch { return null; }
-}
-
-private static string ExtractDomainFromDn(string dn)
-{
-    var m = Regex.Matches(dn, @"DC=([^,]+)", RegexOptions.IgnoreCase);
-    return string.Join(".", m.Select(x => x.Groups[1].Value));
-}
-
-private static string EscapeLdap(string value)
-{
-    return value
-        .Replace(@"\", @"\5c")
-        .Replace("*",  @"\2a")
-        .Replace("(",  @"\28")
-        .Replace(")",  @"\29")
-        .Replace("\0", @"\00");
-}
-
-// Ensures sAMAccountName meets legacy 20-char limit and isn't empty
-private static string SafeSam(string proposed)
-{
-    const int maxLen = 20;
-    var t = (proposed ?? string.Empty).Trim();
-    if (t.Length > maxLen) t = t[..maxLen];
-    if (string.IsNullOrWhiteSpace(t))
-        throw new ArgumentException("Proposed sAMAccountName is empty after normalization.");
-    return t;
-}
-// Trim, de-dupe (case-insensitive), and drop blanks from group list
-private static IReadOnlyList<string> NormalizeGroups(IEnumerable<string>? groups)
-{
-    if (groups == null) return Array.Empty<string>();
-    var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-    var result = new List<string>();
-    foreach (var g in groups)
-    {
-        var trimmed = g?.Trim();
-        if (string.IsNullOrWhiteSpace(trimmed)) continue;
-        if (seen.Add(trimmed)) result.Add(trimmed);
-    }
-    return result;
-}
-// Extract the RID (last sub-authority) from a SID; needed for primaryGroupID
-private static int GetRidFromSid(System.Security.Principal.SecurityIdentifier sid)
-{
-    var parts = sid.Value.Split('-');
-    var last = parts[^1];
-    if (!int.TryParse(last, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var rid))
-        throw new InvalidOperationException($"Invalid SID format: {sid.Value}");
-    return rid;
-}
-
-//   
-    private void AddUserToGroups(UserPrincipal user, List<string> groupNames, string domain)
-    {
-        foreach (var groupName in groupNames.Where(g => !string.IsNullOrWhiteSpace(g)))
-        {
-            try
-            {
-                using var context = new PrincipalContext(ContextType.Domain, domain);
-                using var group = GroupPrincipal.FindByIdentity(context, IdentityType.SamAccountName, groupName);
-                
-                if (group != null)
-                {
-                    if (!group.Members.Contains(user))
-                    {
-                        group.Members.Add(user);
-                        group.Save();
-                        _logger.LogInformation("Added user '{User}' to group '{Group}' in domain '{Domain}'.", user.SamAccountName, groupName, domain);
-                    }
-                }
-                else
-                {
-                    _logger.LogWarning("Could not find group '{Group}' in domain '{Domain}' to add user '{User}'.", groupName, domain, user.SamAccountName);
-                }
-            }
-            catch (Exception ex)
-            {
-                 _logger.LogError(ex, "Error while trying to add user '{User}' to group '{Group}' in domain '{Domain}'.", user.SamAccountName, groupName, domain);
-            }
+            _logger.LogError(ex, "Failed to add user {UserName} to group {GroupName}", userName, groupName);
         }
     }
 
-    private void UpdateGroupMembership(PrincipalContext context, UserPrincipal user, List<string> targetGroupNames, string domain)
+    private void RemoveUserFromGroup(PrincipalContext context, string userName, string groupName)
     {
-        var allowedOptionalGroups = _adSettings.Provisioning.OptionalGroupsForHighPrivilege
-            .Select(g => g.ToLowerInvariant())
-            .ToHashSet();
+         try
+        {
+            using var group = GroupPrincipal.FindByIdentity(context, groupName);
+            if (group != null && group.Members.Contains(context, IdentityType.SamAccountName, userName))
+            {
+                group.Members.Remove(context, IdentityType.SamAccountName, userName);
+                group.Save();
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to remove user {UserName} from group {GroupName}", userName, groupName);
+        }
+    }
 
-        var currentGroupNames = user.GetGroups()
-            .Select(g => g.SamAccountName)
-            .Where(g => g != null && allowedOptionalGroups.Contains(g.ToLowerInvariant()))
-            .ToList();
+    private void UpdateGroupMembership(PrincipalContext context, UserPrincipal user, List<string> requestedGroups, List<string> manageableGroups)
+    {
+        var currentGroups = user.GetGroups()
+                                .Where(g => g.SamAccountName != null && manageableGroups.Contains(g.SamAccountName, StringComparer.OrdinalIgnoreCase))
+                                .Select(g => g.SamAccountName!)
+                                .ToList();
 
-        var groupsToAdd = targetGroupNames.Except(currentGroupNames!, StringComparer.OrdinalIgnoreCase);
-        AddUserToGroups(user, groupsToAdd.ToList(), domain);
+        var groupsToAdd = requestedGroups.Except(currentGroups, StringComparer.OrdinalIgnoreCase).ToList();
+        var groupsToRemove = currentGroups.Except(requestedGroups, StringComparer.OrdinalIgnoreCase).ToList();
 
-        var groupsToRemove = currentGroupNames!.Except(targetGroupNames, StringComparer.OrdinalIgnoreCase);
+        foreach (var groupName in groupsToAdd)
+        {
+            AddUserToGroup(context, user.SamAccountName, groupName);
+        }
+
         foreach (var groupName in groupsToRemove)
         {
-             try
-            {
-                using var group = GroupPrincipal.FindByIdentity(context, IdentityType.SamAccountName, groupName);
-                if (group != null && group.Members.Contains(user))
-                {
-                    group.Members.Remove(user);
-                    group.Save();
-                    _logger.LogInformation("Removed user '{User}' from group '{Group}'.", user.SamAccountName, groupName);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to remove user '{User}' from group '{Group}'.", user.SamAccountName, groupName);
-            }
+            RemoveUserFromGroup(context, user.SamAccountName, groupName);
         }
     }
-    
-    private string GetOuForDomain(string ouFormat, string domain)
+
+    private string GetDomainComponents(string domain)
     {
-        var domainComponents = $"DC={domain.Replace(".", ",DC=")}";
-        return ouFormat.Replace("{domain-components}", domainComponents, StringComparison.OrdinalIgnoreCase);
+        return "DC=" + domain.Replace(".", ",DC=");
     }
-    
-    private string GenerateRandomPassword()
+
+    private string GeneratePassword()
     {
-        const string upperChars = "ABCDEFGHJKLMNPQRSTUVWXYZ";
-        const string lowerChars = "abcdefghijkmnpqrstuvwxyz";
-        const string numberChars = "123456789";
-        const string specialChars = "!$&@!$&@";
-        
+        const string upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+        const string lower = "abcdefghijkmnpqrstuvwxyz";
+        const string number = "23456789";
+        const string special = "*$-+?_&=!%{}/";
         var random = new Random();
-        var passwordChars = new List<char>();
+        var res = new StringBuilder();
 
-        for (int i = 0; i < 3; i++) { passwordChars.Add(upperChars[random.Next(upperChars.Length)]); }
-        for (int i = 0; i < 3; i++) { passwordChars.Add(numberChars[random.Next(numberChars.Length)]); }
-        for (int i = 0; i < 2; i++) { passwordChars.Add(specialChars[random.Next(specialChars.Length)]); }
-        for (int i = 0; i < 2; i++) { passwordChars.Add(lowerChars[random.Next(lowerChars.Length)]); }
+        // Ensure at least one of each character type
+        res.Append(upper[random.Next(upper.Length)]);
+        res.Append(lower[random.Next(lower.Length)]);
+        res.Append(number[random.Next(number.Length)]);
+        res.Append(special[random.Next(special.Length)]);
 
-        var shuffledPassword = new string(passwordChars.OrderBy(x => random.Next()).ToArray());
-        _logger.LogDebug("Generated new random password of length {Length}", shuffledPassword.Length);
-        return shuffledPassword;
+        // Fill the rest of the password
+        string allChars = upper + lower + number + special;
+        for (int i = 0; i < 12; i++)
+        {
+            res.Append(allChars[random.Next(allChars.Length)]);
+        }
+
+        return res.ToString();
     }
-
-    #endregion
 }

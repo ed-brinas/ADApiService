@@ -7,9 +7,6 @@ using System.Security.Claims;
 
 namespace KeyStone.Controllers;
 
-/// <summary>
-/// Provides configuration settings to the frontend.
-/// </summary>
 [Route("api/[controller]")]
 [ApiController]
 [Authorize]
@@ -24,14 +21,6 @@ public class ConfigController : ControllerBase
         _logger = logger;
     }
 
-    /// <summary>
-    /// Gets configuration settings required by the frontend application.
-    /// </summary>
-    /// <remarks>
-    /// This endpoint tailors the response based on the calling user's permissions.
-    /// For example, the list of optional groups is only sent to high-privilege users.
-    /// </remarks>
-    /// <returns>A dynamic object containing configuration settings.</returns>
     [HttpGet("settings")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -42,6 +31,7 @@ public class ConfigController : ControllerBase
         var settings = new
         {
             Domains = _adSettings.Domains,
+            OptionalGroupsForStandard = _adSettings.Provisioning.OptionalGroupsForStandard, // Use the new property
             OptionalGroupsForHighPrivilege = isHighPrivilege ? _adSettings.Provisioning.OptionalGroupsForHighPrivilege : new List<string>()
         };
 
@@ -78,4 +68,3 @@ public class ConfigController : ControllerBase
         return false;
     }
 }
-
