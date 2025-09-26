@@ -11,9 +11,9 @@ builder.Services.AddControllers();
 builder.Services.AddScoped<IAdService, AdService>();
 
 // --- Authentication & Authorization ---
-builder.Services
-    .AddAuthentication(NegotiateDefaults.AuthenticationScheme)
-    .AddNegotiate();
+//builder.Services
+//    .AddAuthentication(NegotiateDefaults.AuthenticationScheme)
+//    .AddNegotiate();
 
 builder.Services.AddAuthorization(options =>
 {
