@@ -97,7 +97,7 @@ document.addEventListener('DOMContentLoaded', () => {
             createDomainSelect.add(new Option(d, d));
         });
         
-        document.getElementById('create-user-show-modal-btn').disabled = !currentUser.isHighPrivilege;
+        document.getElementById('create-user-show-modal-btn').disabled = false;
         
         showScreen('main');
         await handleSearch();
@@ -160,7 +160,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td>${user.displayName || ''}</td>
                     <td>${user.samAccountName || ''}</td>
                     <td>${domain}</td>
-                    <td>${user.enabled ? '<span class="badge text-success-emphasis bg-success-subtle border border-success-subtle rounded-pill">Enabled</span>' : '<span class="badge text-danger-emphasis bg-danger-subtle border border-danger-subtle rounded-pill">Disabled</span>'}</td>
+                    <td>${user.isEnabled ? '<span class="badge text-success-emphasis bg-success-subtle border border-success-subtle rounded-pill">Enabled</span>' : '<span class="badge text-danger-emphasis bg-danger-subtle border border-danger-subtle rounded-pill">Disabled</span>'}</td>
                     <td>${user.hasAdminAccount ? '✔️' : ''}</td>
                     <td>${formatDisplayDate(user.accountExpirationDate)}</td>
                     <td class="action-btn-group">
@@ -171,7 +171,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             : ''
                         }                      
                         <button class="btn btn-sm btn-info" title="Unlock Account" data-action="unlock" data-sam="${user.samAccountName}"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-unlock-fill" viewBox="0 0 16 16"><path d="M11 1a2 2 0 0 0-2 2v4a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h5V3a3 3 0 0 1 6 0v4a.5.5 0 0 1-1 0V3a2 2 0 0 0-2-2"/></svg></button>
-                        ${user.enabled
+                        ${user.isEnabled
                             ? `<button class="btn btn-sm btn-danger" title="Disable Account" data-action="disable" data-sam="${user.samAccountName}"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-person-fill-slash" viewBox="0 0 16 16"><path d="M13.879 10.414a2.502 2.502 0 0 0-3.465-3.465l3.465 3.465Zm.707.707-3.465-3.465a2.502 2.502 0 0 0-3.465 3.465l3.465-3.465Zm-4.56-4.56a2.5 2.5 0 1 0 0-3.535 2.5 2.5 0 0 0 0 3.535M11 5a3 3 0 1 1-6 0 3 3 0 0 1 6 0m-2.293 7.293a1 1 0 0 1-1.414 0l-1.414-1.414a1 1 0 1 1 1.414-1.414l1.414 1.414a1 1 0 0 1 0 1.414m2.828-2.828a1 1 0 0 1-1.414-1.414l-1.414 1.414a1 1 0 1 1-1.414-1.414l1.414-1.414a1 1 0 1 1 1.414 1.414l-1.414 1.414a1 1 0 0 1 1.414 1.414l-3.535-3.535a1 1 0 0 1 1.414-1.414zM4.5 0A3.5 3.5 0 0 1 8 3.5v1.096a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V3.5A3.5 3.5 0 0 1 4.5 0"/></svg></button>`
                             : `<button class="btn btn-sm btn-success" title="Enable Account" data-action="enable" data-sam="${user.samAccountName}"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-person-fill-check" viewBox="0 0 16 16"><path d="M12.5 16a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7m-.646-4.854.646.647.646-.647a.5.5 0 0 1 .708.708l-1 1a.5.5 0 0 1-.708 0l-.5-.5a.5.5 0 0 1 .708-.708z"/><path d="M5.5 2.5a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0m.5 8.5a.5.5 0 0 1 .5.5v1.5a.5.5 0 0 1-1 0V12a.5.5 0 0 1 .5-.5m-2-1a.5.5 0 0 1 .5-.5h4a.5.5 0 0 1 0 1h-4a.5.5 0 0 1-.5-.5m1.5 2a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 0 1h-2a.5.5 0 0 1-.5-.5"/></svg></button>`
                         }
@@ -192,22 +192,24 @@ document.addEventListener('DOMContentLoaded', () => {
         const oneYearFromNow = new Date();
         oneYearFromNow.setFullYear(today.getFullYear() + 1);
         expirationInput.min = toISODateString(today);
-        expirationInput.max = toISODateString(oneYearFromNow);
         expirationInput.value = toISODateString(oneYearFromNow);
         const groupsContainer = document.getElementById('create-optional-groups-container');
         const adminContainer = document.getElementById('create-admin-container');
+        
+        let allGroups = config.optionalGroupsForStandard || [];
         if (currentUser.isHighPrivilege) {
             adminContainer.style.display = 'block';
-            const groupsList = document.getElementById('create-optional-groups-list');
-            if (config.optionalGroupsForHighPrivilege && config.optionalGroupsForHighPrivilege.length > 0) {
-                groupsContainer.style.display = 'block';
-                groupsList.innerHTML = config.optionalGroupsForHighPrivilege.map(g => `<div class="form-check"><input class="form-check-input" type="checkbox" value="${g}" id="create-group-${g}"><label class="form-check-label" for="create-group-${g}">${g}</label></div>`).join('');
-            } else {
-                groupsContainer.style.display = 'none';
-            }
+             allGroups = [...new Set([...allGroups, ...(config.optionalGroupsForHighPrivilege || [])])];
+        } else {
+             adminContainer.style.display = 'none';
+        }
+
+        const groupsList = document.getElementById('create-optional-groups-list');
+        if (allGroups.length > 0) {
+            groupsContainer.style.display = 'block';
+            groupsList.innerHTML = allGroups.map(g => `<div class="form-check"><input class="form-check-input" type="checkbox" value="${g}" id="create-group-${g}"><label class="form-check-label" for="create-group-${g}">${g}</label></div>`).join('');
         } else {
             groupsContainer.style.display = 'none';
-            adminContainer.style.display = 'none';
         }
     };
 
@@ -222,34 +224,49 @@ document.addEventListener('DOMContentLoaded', () => {
 
             document.getElementById('edit-username-display').value = userDetails.samAccountName;
             document.getElementById('edit-samaccountname').value = userDetails.samAccountName;
-            // FIX: Changed userDetails.firstName to userDetails.givenName
             document.getElementById('edit-firstname').value = userDetails.firstName || '';
-            // FIX: Changed userDetails.lastName to userDetails.sn
             document.getElementById('edit-lastname').value = userDetails.lastName || '';
+            // MODIFIED START // Populate new fields - 2025-09-26 10:42 PM
+            document.getElementById('edit-dob').value = formatDateForInput(userDetails.dateOfBirth);
+            document.getElementById('edit-mobile').value = userDetails.mobileNumber || '';
+            // MODIFIED END // Populate new fields - 2025-09-26 10:42 PM
             document.getElementById('edit-domain').value = domain;
             const expirationInput = document.getElementById('edit-expiration');
             const today = new Date();
-            const oneYearFromNow = new Date();
-            oneYearFromNow.setFullYear(today.getFullYear() + 1);
             expirationInput.min = toISODateString(today);
-            expirationInput.max = toISODateString(oneYearFromNow);
-            expirationInput.value = formatDateForInput(userDetails.accountExpirationDate) || toISODateString(oneYearFromNow);
+            expirationInput.value = formatDateForInput(userDetails.accountExpirationDate) || toISODateString(new Date(today.setFullYear(today.getFullYear() + 1)));
             
-            const groupsContainer = document.getElementById('edit-optional-groups-container');
+            // MODIFIED START // Handle standard groups - 2025-09-26 10:42 PM
+            const standardGroupsContainer = document.getElementById('edit-standard-groups-container');
+            const standardGroupsList = document.getElementById('edit-standard-groups-list');
+            if (config.optionalGroupsForStandard && config.optionalGroupsForStandard.length > 0) {
+                standardGroupsContainer.style.display = 'block';
+                standardGroupsList.innerHTML = config.optionalGroupsForStandard.map(g => `<div class="form-check"><input class="form-check-input" type="checkbox" value="${g}" id="edit-standard-group-${g}" ${userDetails.memberOf.includes(g) ? 'checked' : ''}><label class="form-check-label" for="edit-standard-group-${g}">${g}</label></div>`).join('');
+            } else {
+                standardGroupsContainer.style.display = 'none';
+            }
+            // MODIFIED END // Handle standard groups - 2025-09-26 10:42 PM
+
             const adminContainer = document.getElementById('edit-admin-container');
+            const privilegeGroupsContainer = document.getElementById('edit-privilege-groups-container');
+            const adminCheckbox = document.getElementById('edit-admin-account');
+
             if (currentUser.isHighPrivilege) {
                 adminContainer.style.display = 'block';
-                document.getElementById('edit-admin-account').checked = userDetails.hasAdminAccount;
-                const groupsList = document.getElementById('edit-optional-groups-list');
+                adminCheckbox.checked = userDetails.hasAdminAccount;
+                
+                const privilegeGroupsList = document.getElementById('edit-privilege-groups-list');
                 if (config.optionalGroupsForHighPrivilege && config.optionalGroupsForHighPrivilege.length > 0) {
-                    groupsContainer.style.display = 'block';
-                    groupsList.innerHTML = config.optionalGroupsForHighPrivilege.map(g => `<div class="form-check"><input class="form-check-input" type="checkbox" value="${g}" id="edit-group-${g}" ${userDetails.memberOf.includes(g) ? 'checked' : ''}><label class="form-check-label" for="edit-group-${g}">${g}</label></div>`).join('');
-                } else {
-                    groupsContainer.style.display = 'none';
+                     privilegeGroupsList.innerHTML = config.optionalGroupsForHighPrivilege.map(g => `<div class="form-check"><input class="form-check-input" type="checkbox" value="${g}" id="edit-privilege-group-${g}" ${userDetails.memberOf.includes(g) ? 'checked' : ''}><label class="form-check-label" for="edit-privilege-group-${g}">${g}</label></div>`).join('');
                 }
+
+                // MODIFIED START // Show/hide privilege groups based on checkbox - 2025-09-26 10:42 PM
+                privilegeGroupsContainer.style.display = adminCheckbox.checked ? 'block' : 'none';
+                // MODIFIED END // Show/hide privilege groups based on checkbox - 2025-09-26 10:42 PM
+
             } else {
-                groupsContainer.style.display = 'none';
                 adminContainer.style.display = 'none';
+                privilegeGroupsContainer.style.display = 'none';
             }
             editUserModal.show();
         } catch (error) {
@@ -260,9 +277,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const handleResetPassword = async (sam, domain) => {
         if (!confirm(`Are you sure you want to reset the password for ${sam}? A new random password will be generated.`)) return;
         try {
-            const result = await apiFetch(`${API_BASE_URL}/users/reset-password`, { method: 'POST', body: { domain, samAccountName: sam } });
-            document.getElementById('reset-pw-result-username').textContent = result.samAccountName;
-            document.getElementById('reset-pw-result-new').value = result.newPassword;
+            const newPassword = await apiFetch(`${API_BASE_URL}/users/reset-password`, { method: 'POST', body: { domain, samAccountName: sam } });
+            document.getElementById('reset-pw-result-username').textContent = sam;
+            document.getElementById('reset-pw-result-new').value = newPassword;
             resetPasswordResultModal.show();
         } catch (error) {
             showAlert(`Failed to reset password: ${error.detail || error.message}`);
@@ -272,12 +289,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const handleResetAdminPassword = async (sam, domain) => {
         if (!confirm(`Are you sure you want to reset the ADMIN password for the account associated with ${sam}? A new random password will be generated for the admin account.`)) return;
         try {
-            const result = await apiFetch(`${API_BASE_URL}/users/reset-admin-password`, {
+            const newPassword = await apiFetch(`${API_BASE_URL}/users/reset-admin-password`, {
                 method: 'POST',
                 body: { domain, samAccountName: sam }
             });
-            document.getElementById('reset-pw-result-username').textContent = result.samAccountName;
-            document.getElementById('reset-pw-result-new').value = result.newPassword;
+            document.getElementById('reset-pw-result-username').textContent = `${sam}-a`;
+            document.getElementById('reset-pw-result-new').value = newPassword;
             resetPasswordResultModal.show();
         } catch (error) {
             showAlert(`Failed to reset admin password: ${error.detail || error.message}`);
@@ -325,32 +342,34 @@ document.addEventListener('DOMContentLoaded', () => {
             e.stopPropagation(); 
             return; 
         }
-        const expirationDate = form.querySelector('#create-expiration').value;
+        
         const optionalGroups = Array.from(form.querySelectorAll('#create-optional-groups-list input:checked')).map(cb => cb.value);
         const data = {
             domain: form.querySelector('#create-domain').value,
             firstName: form.querySelector('#create-firstname').value,
             lastName: form.querySelector('#create-lastname').value,
             samAccountName: form.querySelector('#create-samaccountname').value,
+            // MODIFIED START // Add new fields to payload - 2025-09-26 10:42 PM
+            dateOfBirth: form.querySelector('#create-dob').value,
+            mobileNumber: form.querySelector('#create-mobile').value,
+            // MODIFIED END // Add new fields to payload - 2025-09-26 10:42 PM
             optionalGroups: optionalGroups,
             createAdminAccount: form.querySelector('#create-admin-account').checked,
-            accountExpirationDate: expirationDate
         };
         try {
             const result = await apiFetch(`${API_BASE_URL}/users/create`, { method: 'POST', body: data });
             createUserModal.hide();
-            const resultBody = document.getElementById('create-user-result-body');
-            let resultHtml = `<h6>${result.message}</h6>`;
-            if (result.userAccount) {
-                resultHtml += `<h5 class="mt-4">User Account Details</h5><table class="table table-sm result-table"><tr><td><strong>Username:</strong></td><td>${result.userAccount.samAccountName}</td></tr><tr><td><strong>Display Name:</strong></td><td>${result.userAccount.displayName}</td></tr><tr><td><strong>Temporary Password:</strong></td><td><code>${result.userAccount.initialPassword}</code></td></tr></table>`;
+            
+            let resultHtml = `<h6>User account for <strong>${result.samAccountName}</strong> created successfully.</h6>`;
+            resultHtml += `<p class="mt-3"><strong>Temporary Password:</strong></p><div class="input-group"><input type="text" class="form-control" value="${result.initialPassword}" readonly><button class="btn btn-outline-secondary copy-btn" data-copy-text="${result.initialPassword}">Copy</button></div>`;
+
+            if (result.adminAccountName) {
+                resultHtml += `<h6 class="mt-4">Admin account <strong>${result.adminAccountName}</strong> also created.</h6>`;
+                resultHtml += `<p class="mt-3"><strong>Admin Temporary Password:</strong></p><div class="input-group"><input type="text" class="form-control" value="${result.adminInitialPassword}" readonly><button class="btn btn-outline-secondary copy-btn" data-copy-text="${result.adminInitialPassword}">Copy</button></div>`;
             }
-            if (result.adminAccount) {
-                resultHtml += `<h5 class="mt-4">Admin Account Details</h5><table class="table table-sm result-table"><tr><td><strong>Username:</strong></td><td>${result.adminAccount.samAccountName}</td></tr><tr><td><strong>Display Name:</strong></td><td>${result.adminAccount.displayName}</td></tr><tr><td><strong>Temporary Password:</strong></td><td><code>${result.adminAccount.initialPassword}</code></td></tr></table>`;
-            }
-            if(result.groupsAssociated && result.groupsAssociated.length > 0){
-                resultHtml += `<h5 class="mt-4">Associated Groups</h5><p>${result.groupsAssociated.join(', ')}</p>`;
-            }
-            resultBody.innerHTML = resultHtml;
+            
+            document.getElementById('create-user-result-body').innerHTML = resultHtml;
+
             createUserResultModal.show();
             handleSearch();
         } catch (error) {
@@ -367,16 +386,22 @@ document.addEventListener('DOMContentLoaded', () => {
             e.stopPropagation(); 
             return; 
         }
-        const expirationDate = form.querySelector('#edit-expiration').value;
-        const optionalGroups = Array.from(form.querySelectorAll('#edit-optional-groups-list input:checked')).map(cb => cb.value);
+
+        // MODIFIED START // Consolidate all groups - 2025-09-26 10:42 PM
+        const standardGroups = Array.from(form.querySelectorAll('#edit-standard-groups-list input:checked')).map(cb => cb.value);
+        const privilegeGroups = Array.from(form.querySelectorAll('#edit-privilege-groups-list input:checked')).map(cb => cb.value);
+        const optionalGroups = [...new Set([...standardGroups, ...privilegeGroups])];
+        // MODIFIED END // Consolidate all groups - 2025-09-26 10:42 PM
+
         const data = {
             domain: form.querySelector('#edit-domain').value,
             samAccountName: form.querySelector('#edit-samaccountname').value,
-            firstName: form.querySelector('#edit-firstname').value,
-            lastName: form.querySelector('#edit-lastname').value,
+            // MODIFIED START // Add new fields to payload - 2025-09-26 10:42 PM
+            dateOfBirth: form.querySelector('#edit-dob').value,
+            mobileNumber: form.querySelector('#edit-mobile').value,
+            // MODIFIED END // Add new fields to payload - 2025-09-26 10:42 PM
             optionalGroups: optionalGroups,
-            manageAdminAccount: form.querySelector('#edit-admin-account').checked,
-            accountExpirationDate: expirationDate
+            hasAdminAccount: form.querySelector('#edit-admin-account').checked,
         };
         try {
             await apiFetch(`${API_BASE_URL}/users/update`, { method: 'PUT', body: data });
@@ -391,13 +416,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Event Listeners and Initialization ---
     document.getElementById('login-btn').addEventListener('click', handleLoginClick);
-    //document.getElementById('logout-btn').addEventListener('click', () => showScreen('login'));
     document.getElementById('logout-btn').addEventListener('click', handleLogoutClick);
     document.getElementById('try-again-btn').addEventListener('click', () => showScreen('login'));
     document.getElementById('search-users-btn').addEventListener('click', handleSearch);
     document.getElementById('create-user-show-modal-btn').addEventListener('click', () => { handleShowCreateModal(); createUserModal.show(); });
     document.getElementById('create-user-form').addEventListener('submit', handleCreateSubmit);
     document.getElementById('edit-user-form').addEventListener('submit', handleEditSubmit);
+    
+    // MODIFIED START // Add listener for admin checkbox - 2025-09-26 10:42 PM
+    const editAdminCheckbox = document.getElementById('edit-admin-account');
+    if(editAdminCheckbox) {
+        editAdminCheckbox.addEventListener('change', (e) => {
+            document.getElementById('edit-privilege-groups-container').style.display = e.target.checked ? 'block' : 'none';
+        });
+    }
+    // MODIFIED END // Add listener for admin checkbox - 2025-09-26 10:42 PM
+
     document.getElementById('user-table-body').addEventListener('click', (e) => {
         const button = e.target.closest('button[data-action]');
         if (!button) return;
@@ -406,16 +440,27 @@ document.addEventListener('DOMContentLoaded', () => {
         switch(button.dataset.action) {
             case 'edit': handleShowEditModal(sam, domain); break;
             case 'reset-pw': handleResetPassword(sam, domain); break;
+            case 'reset-admin-pw': handleResetAdminPassword(sam, domain); break;
             case 'unlock': handleUnlock(sam, domain); break;
             case 'disable': handleDisable(sam, domain); break;
             case 'enable': handleEnable(sam, domain); break;
         }
     });
+
     document.getElementById('copy-password-btn').addEventListener('click', () => {
         const passwordInput = document.getElementById('reset-pw-result-new');
-        passwordInput.select();
-        document.execCommand('copy');
-        showAlert('Password copied to clipboard!', 'success');
+        navigator.clipboard.writeText(passwordInput.value).then(() => {
+             showAlert('Password copied to clipboard!', 'success');
+        });
+    });
+    
+    document.getElementById('create-user-result-body').addEventListener('click', (e) => {
+        const button = e.target.closest('.copy-btn');
+        if (!button) return;
+        const textToCopy = button.dataset.copyText;
+         navigator.clipboard.writeText(textToCopy).then(() => {
+             showAlert('Password copied to clipboard!', 'success');
+        });
     });
 
     createUserModal = new bootstrap.Modal(document.getElementById('create-user-modal'));

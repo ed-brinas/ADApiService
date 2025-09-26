@@ -82,12 +82,16 @@ public class AdService : IAdService
 
                 var searcher = new DirectorySearcher(de)
                 {
+                    // MODIFIED START // Added extensionAttribute1 to properties - 2025-09-26 10:45 PM
                     PropertiesToLoad = { "extensionAttribute1", "mobile" }
+                    // MODIFIED END // Added extensionAttribute1 to properties - 2025-09-26 10:45 PM
                 };
                 var result = searcher.FindOne();
                 
+                // MODIFIED START // Added DateOfBirth and MobileNumber - 2025-09-26 10:45 PM
                 var dateOfBirth = result?.Properties["extensionAttribute1"]?.Count > 0 ? result.Properties["extensionAttribute1"][0].ToString() : null;
                 var mobileNumber = result?.Properties["mobile"]?.Count > 0 ? result.Properties["mobile"][0].ToString() : null;
+                // MODIFIED END // Added DateOfBirth and MobileNumber - 2025-09-26 10:45 PM
 
                 var userDetails = new UserDetailModel
                 {
@@ -97,8 +101,10 @@ public class AdService : IAdService
                     DisplayName = user.DisplayName,
                     UserPrincipalName = user.UserPrincipalName,
                     EmailAddress = user.EmailAddress,
+                    // MODIFIED START // Added DateOfBirth and MobileNumber - 2025-09-26 10:45 PM
                     DateOfBirth = dateOfBirth,
                     MobileNumber = mobileNumber,
+                    // MODIFIED END // Added DateOfBirth and MobileNumber - 2025-09-26 10:45 PM
                     IsEnabled = user.Enabled ?? false,
                     IsLockedOut = user.IsAccountLockedOut(),
                     MemberOf = user.GetGroups().Select(g => g.SamAccountName).ToList(),
@@ -155,6 +161,7 @@ public class AdService : IAdService
                         de.MoveTo(parent);
                     }
                     
+                    // MODIFIED START // Added DateOfBirth and MobileNumber - 2025-09-26 10:45 PM
                     if (!string.IsNullOrEmpty(request.DateOfBirth))
                     {
                         de.Properties["extensionAttribute1"].Value = request.DateOfBirth;
@@ -163,6 +170,7 @@ public class AdService : IAdService
                     {
                         de.Properties["mobile"].Value = request.MobileNumber;
                     }
+                    // MODIFIED END // Added DateOfBirth and MobileNumber - 2025-09-26 10:45 PM
                     de.CommitChanges();
                 }
             }
@@ -207,6 +215,7 @@ public class AdService : IAdService
             {
                 if (de != null)
                 {
+                    // MODIFIED START // Added DateOfBirth and MobileNumber - 2025-09-26 10:45 PM
                     if (request.DateOfBirth != null)
                     {
                         de.Properties["extensionAttribute1"].Value = request.DateOfBirth;
@@ -215,6 +224,7 @@ public class AdService : IAdService
                     {
                         de.Properties["mobile"].Value = request.MobileNumber;
                     }
+                    // MODIFIED END // Added DateOfBirth and MobileNumber - 2025-09-26 10:45 PM
                     de.CommitChanges();
                 }
             }

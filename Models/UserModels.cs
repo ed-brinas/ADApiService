@@ -15,6 +15,9 @@ public class CreateUserRequest
     [Required]
     public string LastName { get; set; } = string.Empty;
     public string? DateOfBirth { get; set; } // New field
+    // MODIFIED START // Added RegularExpression for validation - 2025-09-26 10:42 PM
+    [RegularExpression(@"^\+966\d{9}$", ErrorMessage = "Mobile number must be in the format +966xxxxxxxxx")]
+    // MODIFIED END // Added RegularExpression for validation - 2025-09-26 10:42 PM
     public string? MobileNumber { get; set; } // New field
     public bool CreateAdminAccount { get; set; }
     public List<string> OptionalGroups { get; set; } = new();
@@ -27,6 +30,9 @@ public class UpdateUserRequest
     [Required]
     public string SamAccountName { get; set; } = string.Empty;
     public string? DateOfBirth { get; set; } // New field
+    // MODIFIED START // Added RegularExpression for validation - 2025-09-26 10:42 PM
+    [RegularExpression(@"^\+966\d{9}$", ErrorMessage = "Mobile number must be in the format +966xxxxxxxxx")]
+    // MODIFIED END // Added RegularExpression for validation - 2025-09-26 10:42 PM
     public string? MobileNumber { get; set; } // New field
     public bool HasAdminAccount { get; set; }
     public List<string> OptionalGroups { get; set; } = new();
