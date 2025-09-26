@@ -8,7 +8,7 @@ namespace KeyStone.Controllers;
 /// <summary>
 /// Manages user lifecycle operations in Active Directory.
 /// </summary>
-[Route("api/[controller]")]
+[Route("[controller]")]
 [ApiController]
 public class UsersController : ControllerBase
 {

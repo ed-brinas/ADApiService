@@ -7,7 +7,7 @@ namespace KeyStone.Controllers
     /// Provides a simple endpoint to verify that the API is running.
     /// </summary>
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("[controller]")]
     public class HealthCheckController : ControllerBase
     {
         /// <summary>
