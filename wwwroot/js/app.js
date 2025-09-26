@@ -188,7 +188,7 @@ document.addEventListener('DOMContentLoaded', () => {
         expirationInput.min = toISODateString(today);
         expirationInput.value = toISODateString(oneYearFromNow);
 
-        // MODIFIED START // Logic to show standard and privilege groups separately - 2025-09-26 10:57 PM
+        // MODIFIED START // Logic to show standard groups by default - 2025-09-26 11:08 PM
         const standardGroupsContainer = document.getElementById('create-standard-groups-container');
         const standardGroupsList = document.getElementById('create-standard-groups-list');
         const adminContainer = document.getElementById('create-admin-container');
@@ -196,7 +196,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const privilegeGroupsContainer = document.getElementById('create-privilege-groups-container');
         const privilegeGroupsList = document.getElementById('create-privilege-groups-list');
 
-        // Always show standard groups
+        // Always show standard groups if they exist
         if (config.optionalGroupsForStandard && config.optionalGroupsForStandard.length > 0) {
             standardGroupsContainer.style.display = 'block';
             standardGroupsList.innerHTML = config.optionalGroupsForStandard.map(g => `<div class="form-check"><input class="form-check-input" type="checkbox" value="${g}" id="create-standard-group-${g}"><label class="form-check-label" for="create-standard-group-${g}">${g}</label></div>`).join('');
@@ -206,7 +206,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (currentUser.isHighPrivilege) {
             adminContainer.style.display = 'block';
-            // Show privilege groups only if admin account is toggled
             if (config.optionalGroupsForHighPrivilege && config.optionalGroupsForHighPrivilege.length > 0) {
                  privilegeGroupsList.innerHTML = config.optionalGroupsForHighPrivilege.map(g => `<div class="form-check"><input class="form-check-input" type="checkbox" value="${g}" id="create-privilege-group-${g}"><label class="form-check-label" for="create-privilege-group-${g}">${g}</label></div>`).join('');
             }
@@ -216,7 +215,7 @@ document.addEventListener('DOMContentLoaded', () => {
             adminContainer.style.display = 'none';
             privilegeGroupsContainer.style.display = 'none';
         }
-        // MODIFIED END // Logic to show standard and privilege groups separately - 2025-09-26 10:57 PM
+        // MODIFIED END // Logic to show standard groups by default - 2025-09-26 11:08 PM
     };
 
     const handleShowEditModal = async (sam, domain) => {
@@ -240,7 +239,7 @@ document.addEventListener('DOMContentLoaded', () => {
             expirationInput.min = toISODateString(today);
             expirationInput.value = formatDateForInput(userDetails.accountExpirationDate) || toISODateString(new Date(today.setFullYear(today.getFullYear() + 1)));
 
-            // MODIFIED START // Corrected logic for showing standard and privilege groups - 2025-09-26 10:57 PM
+            // MODIFIED START // Logic to show standard groups by default - 2025-09-26 11:08 PM
             const standardGroupsContainer = document.getElementById('edit-standard-groups-container');
             const standardGroupsList = document.getElementById('edit-standard-groups-list');
             if (config.optionalGroupsForStandard && config.optionalGroupsForStandard.length > 0) {
@@ -269,7 +268,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 adminContainer.style.display = 'none';
                 privilegeGroupsContainer.style.display = 'none';
             }
-            // MODIFIED END // Corrected logic for showing standard and privilege groups - 2025-09-26 10:57 PM
+            // MODIFIED END // Logic to show standard groups by default - 2025-09-26 11:08 PM
             editUserModal.show();
         } catch (error) {
             showAlert(`Failed to load user details: ${error.detail || error.message}`);
@@ -346,11 +345,9 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // MODIFIED START // Consolidate groups from both lists - 2025-09-26 10:57 PM
         const standardGroups = Array.from(form.querySelectorAll('#create-standard-groups-list input:checked')).map(cb => cb.value);
         const privilegeGroups = Array.from(form.querySelectorAll('#create-privilege-groups-list input:checked')).map(cb => cb.value);
         const optionalGroups = [...new Set([...standardGroups, ...privilegeGroups])];
-        // MODIFIED END // Consolidate groups from both lists - 2025-09-26 10:57 PM
 
         const data = {
             domain: form.querySelector('#create-domain').value,
@@ -425,7 +422,6 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('create-user-form').addEventListener('submit', handleCreateSubmit);
     document.getElementById('edit-user-form').addEventListener('submit', handleEditSubmit);
 
-    // MODIFIED START // Added event listeners for admin checkboxes in both modals - 2025-09-26 10:57 PM
     const createAdminCheckbox = document.getElementById('create-admin-account');
     if(createAdminCheckbox) {
         createAdminCheckbox.addEventListener('change', (e) => {
@@ -439,7 +435,6 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('edit-privilege-groups-container').style.display = e.target.checked ? 'block' : 'none';
         });
     }
-    // MODIFIED END // Added event listeners for admin checkboxes in both modals - 2025-09-26 10:57 PM
 
     document.getElementById('user-table-body').addEventListener('click', (e) => {
         const button = e.target.closest('button[data-action]');
