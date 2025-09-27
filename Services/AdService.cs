@@ -205,22 +205,36 @@ public class AdService : IAdService
             {
                 if (de != null)
                 {
-                    // MODIFIED START // Corrected logic to handle clearing attributes to prevent DirectoryServicesCOMException. - 2025-09-27 12:02 AM
+                    // MODIFIED START // Final fix to prevent DirectoryServicesCOMException by safely clearing attributes. - 2025-09-27 12:08 AM
                     if (request.DateOfBirth != null)
                     {
                         if (string.IsNullOrEmpty(request.DateOfBirth))
-                            de.Properties["extensionAttribute1"].Clear();
+                        {
+                            if (de.Properties.Contains("extensionAttribute1"))
+                            {
+                                de.Properties["extensionAttribute1"].Clear();
+                            }
+                        }
                         else
+                        {
                             de.Properties["extensionAttribute1"].Value = request.DateOfBirth;
+                        }
                     }
                     if (request.MobileNumber != null)
                     {
                         if (string.IsNullOrEmpty(request.MobileNumber))
-                            de.Properties["mobile"].Clear();
+                        {
+                            if (de.Properties.Contains("mobile"))
+                            {
+                                de.Properties["mobile"].Clear();
+                            }
+                        }
                         else
+                        {
                             de.Properties["mobile"].Value = request.MobileNumber;
+                        }
                     }
-                    // MODIFIED END // Corrected logic to handle clearing attributes to prevent DirectoryServicesCOMException. - 2025-09-27 12:02 AM
+                    // MODIFIED END // Final fix to prevent DirectoryServicesCOMException by safely clearing attributes. - 2025-09-27 12:08 AM
                     de.CommitChanges();
                 }
             }
