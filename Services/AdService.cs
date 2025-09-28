@@ -205,7 +205,7 @@ public class AdService : IAdService
             {
                 if (de != null)
                 {
-                    // MODIFIED START // Final fix to prevent DirectoryServicesCOMException by safely clearing attributes. - 2025-09-27 12:08 AM
+                    // MODIFIED START // Final robust fix for DirectoryServicesCOMException by checking if property exists before clearing. - 2025-09-27 12:15 AM
                     if (request.DateOfBirth != null)
                     {
                         if (string.IsNullOrEmpty(request.DateOfBirth))
@@ -234,7 +234,7 @@ public class AdService : IAdService
                             de.Properties["mobile"].Value = request.MobileNumber;
                         }
                     }
-                    // MODIFIED END // Final fix to prevent DirectoryServicesCOMException by safely clearing attributes. - 2025-09-27 12:08 AM
+                    // MODIFIED END // Final robust fix for DirectoryServicesCOMException by checking if property exists before clearing. - 2025-09-27 12:15 AM
                     de.CommitChanges();
                 }
             }
@@ -249,6 +249,8 @@ public class AdService : IAdService
             {
                 if (request.HasAdminAccount && !adminExists)
                 {
+                    // Note: When creating an admin account from the edit screen, privilege groups are not passed.
+                    // This means the admin account will only be a member of the default group. This can be enhanced later if needed.
                     var createReq = new CreateUserRequest { SamAccountName = request.SamAccountName, Domain = request.Domain, FirstName = user.GivenName, LastName = user.Surname };
                     CreateAdminAccount(context, createReq);
                 }
@@ -539,7 +541,7 @@ public class AdService : IAdService
     {
         const string upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
         const string lower = "abcdefghijkmnpqrstuvwxyz";
-        const string number = "23456789";
+        const string number = "123456789";
         const string special = "*$-+?_&=!%{}/";
         var random = new Random();
         var res = new StringBuilder();
