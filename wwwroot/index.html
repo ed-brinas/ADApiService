@@ -26,7 +26,7 @@
     </div>
 
     <div id="error-screen" class="screen">
-         <div class="text-center">
+        <div class="text-center">
             <h1 id="error-title" class="text-danger"></h1>
             <p id="error-details" class="lead"></p>
             <button class="btn btn-secondary mt-3" id="try-again-btn">Go to Login</button>
@@ -82,33 +82,34 @@
                 </div>
                 <div class="modal-body">
                     <form id="create-user-form" novalidate>
-                    <div class="mb-3"><label for="create-domain" class="form-label">Target Domain</label><select class="form-select" id="create-domain" required></select></div>
-                    <div class="row">
-                        <div class="col-md-6 mb-3"><label for="create-firstname" class="form-label">First Name</label><input type="text" class="form-control" id="create-firstname" required></div>
-                        <div class="col-md-6 mb-3"><label for="create-lastname" class="form-label">Last Name</label><input type="text" class="form-control" id="create-lastname" required></div>
-                    </div>
-                    <div class="mb-3"><label for="create-samaccountname" class="form-label">Username (Logon Name)</label><input type="text" class="form-control" id="create-samaccountname" required></div>
-                    <div class="row">
-                        <div class="col-md-6 mb-3"><label for="create-dob" class="form-label">Date of Birth</label><input type="date" class="form-control" id="create-dob" required></div>
-                        <div class="col-md-6 mb-3"><label for="create-mobile" class="form-label">Mobile Number</label><input type="text" class="form-control" id="create-mobile" placeholder="+966xxxxxxxxx" pattern="^\+966\d{9}$" required></div>
-                    </div>
-                    <div class="mb-3"><label for="create-expiration" class="form-label">Account Expiration Date</label><input type="date" class="form-control" id="create-expiration" required></div>
-                    <div id="create-standard-groups-container" class="mb-3" style="display: none;">
-                        <label class="form-label">Standard Optional Groups</label>
-                        <div id="create-standard-groups-list"></div>
-                    </div>
-                    <div id="create-admin-container" class="form-check form-switch mb-3" style="display: none;"><input class="form-check-input" type="checkbox" role="switch" id="create-admin-account"><label class="form-check-label" for="create-admin-account">Create associated admin account</label></div>
-                    <div id="create-privilege-groups-container" class="mb-3" style="display: none;">
-                        <label class="form-label">Privilege Optional Groups</label>
-                        <div id="create-privilege-groups-list"></div>
-                    </div>
-                    <div class="alert alert-info small">A secure, random password will be generated for the new user account(s).</div>
+                        <div class="mb-3"><label for="create-domain" class="form-label">Target Domain</label><select class="form-select" id="create-domain" required></select></div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3"><label for="create-firstname" class="form-label">First Name</label><input type="text" class="form-control" id="create-firstname" required></div>
+                            <div class="col-md-6 mb-3"><label for="create-lastname" class="form-label">Last Name</label><input type="text" class="form-control" id="create-lastname" required></div>
+                        </div>
+                        <div class="mb-3"><label for="create-samaccountname" class="form-label">Username (Logon Name)</label><input type="text" class="form-control" id="create-samaccountname" required></div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3"><label for="create-dob" class="form-label">Date of Birth</label><input type="date" class="form-control" id="create-dob" required></div>
+                            <div class="col-md-6 mb-3"><label for="create-mobile" class="form-label">Mobile Number</label><input type="text" class="form-control" id="create-mobile" placeholder="+966xxxxxxxxx" pattern="^\+966\d{9}$" required></div>
+                        </div>
+                        <div class="mb-3"><label for="create-expiration" class="form-label">Account Expiration Date</label><input type="date" class="form-control" id="create-expiration" required></div>
+                        <div id="create-standard-groups-container" class="mb-3" style="display: none;">
+                            <label class="form-label">Standard Optional Groups</label>
+                            <div id="create-standard-groups-list"></div>
+                        </div>
+                        <div id="create-admin-container" class="form-check form-switch mb-3" style="display: none;"><input class="form-check-input" type="checkbox" role="switch" id="create-admin-account"><label class="form-check-label" for="create-admin-account">Create associated admin account</label></div>
+                        <div id="create-privilege-groups-container" class="mb-3" style="display: none;">
+                            <label class="form-label">Privilege Optional Groups</label>
+                            <div id="create-privilege-groups-list"></div>
+                        </div>
+                        <div class="alert alert-info small">A secure, random password will be generated for the new user account(s).</div>
                     </form>
                 </div>
                 <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button><button type="submit" form="create-user-form" class="btn btn-primary">Create User</button></div>
             </div>
         </div>
     </div>
+
     <div class="modal" id="edit-user-modal" tabindex="-1">
         <div class="modal-dialog">
             <div class="modal-content">
@@ -118,26 +119,26 @@
                 </div>
                 <div class="modal-body">
                     <form id="edit-user-form" novalidate>
-                    <input type="hidden" id="edit-samaccountname"><input type="hidden" id="edit-domain">
-                    <div class="mb-3"><label for="edit-username-display" class="form-label">Username</label><input type="text" class="form-control" id="edit-username-display" readonly></div>
-                    <div class="row">
-                        <div class="col-md-6 mb-3"><label for="edit-firstname" class="form-label">First Name</label><input type="text" class="form-control" id="edit-firstname" required></div>
-                        <div class="col-md-6 mb-3"><label for="edit-lastname" class="form-label">Last Name</label><input type="text" class="form-control" id="edit-lastname" required></div>
-                    </div>
-                    <div class="row">
-                        <div class="col-md-6 mb-3"><label for="edit-dob" class="form-label">Date of Birth</label><input type="date" class="form-control" id="edit-dob" required></div>
-                        <div class="col-md-6 mb-3"><label for="edit-mobile" class="form-label">Mobile Number</label><input type="text" class="form-control" id="edit-mobile" placeholder="+966xxxxxxxxx" pattern="^\+966\d{9}$" required></div>
-                    </div>
-                    <div class="mb-3"><label for="edit-expiration" class="form-label">Account Expiration Date</label><input type="date" class="form-control" id="edit-expiration" required></div>
-                    <div id="edit-standard-groups-container" class="mb-3" style="display: none;">
-                        <label class="form-label">Standard User Optional Groups</label>
-                        <div id="edit-standard-groups-list"></div>
-                    </div>
-                    <div id="edit-admin-container" class="form-check form-switch mb-3" style="display: none;"><input class="form-check-input" type="checkbox" role="switch" id="edit-admin-account"><label class="form-check-label" for="edit-admin-account">Enable Administrator Access</label></div>
-                    <div id="edit-privilege-groups-container" class="mb-3" style="display: none;">
-                        <label class="form-label">Privilege User Optional Groups</label>
-                        <div id="edit-privilege-groups-list"></div>
-                    </div>
+                        <input type="hidden" id="edit-samaccountname"><input type="hidden" id="edit-domain">
+                        <div class="mb-3"><label for="edit-username-display" class="form-label">Username</label><input type="text" class="form-control" id="edit-username-display" readonly></div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3"><label for="edit-firstname" class="form-label">First Name</label><input type="text" class="form-control" id="edit-firstname" required></div>
+                            <div class="col-md-6 mb-3"><label for="edit-lastname" class="form-label">Last Name</label><input type="text" class="form-control" id="edit-lastname" required></div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3"><label for="edit-dob" class="form-label">Date of Birth</label><input type="date" class="form-control" id="edit-dob" required></div>
+                            <div class="col-md-6 mb-3"><label for="edit-mobile" class="form-label">Mobile Number</label><input type="text" class="form-control" id="edit-mobile" placeholder="+966xxxxxxxxx" pattern="^\+966\d{9}$" required></div>
+                        </div>
+                        <div class="mb-3"><label for="edit-expiration" class="form-label">Account Expiration Date</label><input type="date" class="form-control" id="edit-expiration" required></div>
+                        <div id="edit-standard-groups-container" class="mb-3" style="display: none;">
+                            <label class="form-label">Standard User Optional Groups</label>
+                            <div id="edit-standard-groups-list"></div>
+                        </div>
+                        <div id="edit-admin-container" class="form-check form-switch mb-3" style="display: none;"><input class="form-check-input" type="checkbox" role="switch" id="edit-admin-account"><label class="form-check-label" for="edit-admin-account">Enable Administrator Access</label></div>
+                        <div id="edit-privilege-groups-container" class="mb-3" style="display: none;">
+                            <label class="form-label">Privilege User Optional Groups</label>
+                            <div id="edit-privilege-groups-list"></div>
+                        </div>
                     </form>
                 </div>
                 <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button><button type="submit" form="edit-user-form" class="btn btn-primary">Save Changes</button></div>
@@ -157,33 +158,32 @@
         </div>
     </div>
     <div class="modal" id="reset-password-result-modal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Password Reset Successful</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <p>Password for user <strong id="reset-pw-result-username"></strong> has been reset.</p>
-                <div class="mb-3">
-                <label for="reset-pw-result-new" class="form-label">New Temporary Password:</label>
-                <div class="input-group">
-                    <input type="text" class="form-control" id="reset-pw-result-new" readonly>
-                    <button class="btn btn-outline-secondary" type="button" id="copy-password-btn" title="Copy to clipboard">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-clipboard" viewBox="0 0 16 16">
-                            <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1z"/>
-                            <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0z"/>
-                        </svg>
-                    </button>
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Password Reset Successful</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
+                <div class="modal-body">
+                    <p>Password for user <strong id="reset-pw-result-username"></strong> has been reset.</p>
+                    <div class="mb-3">
+                        <label for="reset-pw-result-new" class="form-label">New Temporary Password:</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="reset-pw-result-new" readonly>
+                            <button class="btn btn-outline-secondary" type="button" id="copy-password-btn" title="Copy to clipboard">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-clipboard" viewBox="0 0 16 16">
+                                    <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1z" />
+                                    <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0z" />
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                    <p class="form-text">Please provide this password to the user. They will be required to change it on their next login.</p>
                 </div>
-                <p class="form-text">Please provide this password to the user. They will be required to change it on their next login.</p>
+                <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button></div>
             </div>
-            <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button></div>
         </div>
     </div>
-    </div>
-
     <script src="js/bootstrap.bundle.min.js"></script>
     <script src="js/app.js"></script>
 </body>
