@@ -542,7 +542,7 @@ public class AdService : IAdService
         const string upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
         const string lower = "abcdefghijkmnpqrstuvwxyz";
         const string number = "123456789";
-        const string special = "*$-+?_&=!%{}/";
+        const string special = "*$-+?_&=!%{}";
         var random = new Random();
         var res = new StringBuilder();
 
