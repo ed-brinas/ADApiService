@@ -3,6 +3,9 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using System.Security.Claims;
 using System.DirectoryServices.AccountManagement;
+using Microsoft.AspNetCore.Authentication; // MODIFIED // Added for SignInAsync - 2025-10-10 07:58 AM
+using Microsoft.AspNetCore.Authentication.Cookies; // MODIFIED // Added for Cookie Auth Defaults - 2025-10-10 07:58 AM
+using Microsoft.AspNetCore.Authorization; // MODIFIED // Added for AllowAnonymous - 2025-10-10 07:58 AM
 
 namespace KeyStone.Controllers;
 
@@ -21,6 +24,45 @@ public class AuthController : ControllerBase
         _adSettings = adSettings.Value;
         _logger = logger;
     }
+
+    // MODIFIED START // Added Login method - 2025-10-10 07:58 AM
+    [AllowAnonymous]
+    [HttpPost("login")]
+    public async Task<IActionResult> Login([FromBody] LoginRequest loginRequest)
+    {
+        try
+        {
+            using (var context = new PrincipalContext(ContextType.Domain, loginRequest.Domain, null, ContextOptions.Negotiate, loginRequest.Username, loginRequest.Password))
+            {
+                if (context.ValidateCredentials(loginRequest.Username, loginRequest.Password))
+                {
+                    var userPrincipal = UserPrincipal.FindByIdentity(context, IdentityType.SamAccountName, loginRequest.Username);
+                    if (userPrincipal != null)
+                    {
+                        var claims = new List<Claim>
+                        {
+                            new Claim(ClaimTypes.Name, userPrincipal.SamAccountName),
+                            new Claim(ClaimTypes.GivenName, userPrincipal.GivenName),
+                            new Claim(ClaimTypes.Surname, userPrincipal.Surname),
+                        };
+
+                        var claimsIdentity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
+
+                        await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(claimsIdentity));
+
+                        return Ok(new { Message = "Login successful" });
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Login failed for user {Username}", loginRequest.Username);
+        }
+
+        return Unauthorized(new { Message = "Invalid credentials" });
+    }
+    // MODIFIED END // Added Login method - 2025-10-10 07:58 AM
 
     /// <summary>
     /// Gets the context for the currently authenticated user.
@@ -107,4 +149,3 @@ public class AuthController : ControllerBase
         return Ok(userModel);
     }
 }
-

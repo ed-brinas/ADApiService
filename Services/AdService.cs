@@ -22,17 +22,57 @@ public class AdService : IAdService
         _logger = logger;
     }
 
+    // MODIFIED START // Added helper method to get a PrincipalContext with service account credentials - 2025-10-10 07:58 AM
+    private PrincipalContext GetPrincipalContext(string domain)
+    {
+        // Try each AD server until a connection is successful
+        foreach (var server in _adSettings.AdServers)
+        {
+            try
+            {
+                var context = new PrincipalContext(
+                    ContextType.Domain,
+                    domain,
+                    server,
+                    ContextOptions.Negotiate,
+                    _adSettings.ServiceAccount.Username,
+                    _adSettings.ServiceAccount.Password
+                );
+                // A successful connection doesn't happen until you actually *use* the context,
+                // so we'll do a quick validation to ensure it's a good connection.
+                using (var user = UserPrincipal.FindByIdentity(context, IdentityType.SamAccountName, _adSettings.ServiceAccount.Username))
+                {
+                    if (user != null)
+                    {
+                        _logger.LogInformation("Successfully connected to AD server {Server} for domain {Domain}", server, domain);
+                        return context;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to connect to AD server {Server} for domain {Domain}", server, domain);
+            }
+        }
+
+        throw new Exception($"Unable to connect to any of the configured AD servers for domain {domain}.");
+    }
+
     /// <inheritdoc />
     public async Task<IEnumerable<UserListItem>> ListUsersAsync(string domain, string? nameFilter, bool? statusFilter, bool? hasAdminAccount)
     {
         return await Task.Run(() =>
         {
             var users = new List<UserListItem>();
-            using var domainContext = new PrincipalContext(ContextType.Domain, domain);
+            // MODIFIED START // Use GetPrincipalContext - 2025-10-10 07:58 AM
+            using var domainContext = GetPrincipalContext(domain);
+            // MODIFIED END // Use GetPrincipalContext - 2025-10-10 07:58 AM
             
             foreach (var searchOu in _adSettings.Provisioning.SearchBaseOus)
             {
-                using var ouContext = new PrincipalContext(ContextType.Domain, domain, searchOu);
+                // MODIFIED START // Use GetPrincipalContext - 2025-10-10 07:58 AM
+                using var ouContext = GetPrincipalContext(domain);
+                // MODIFIED END // Use GetPrincipalContext - 2025-10-10 07:58 AM
                 using var searcher = new PrincipalSearcher(new UserPrincipal(ouContext));
                 
                 foreach (var result in searcher.FindAll())
@@ -66,7 +106,9 @@ public class AdService : IAdService
         {
             try
             {
-                using var context = new PrincipalContext(ContextType.Domain, domain);
+                // MODIFIED START // Use GetPrincipalContext - 2025-10-10 07:58 AM
+                using var context = GetPrincipalContext(domain);
+                // MODIFIED END // Use GetPrincipalContext - 2025-10-10 07:58 AM
                 var user = UserPrincipal.FindByIdentity(context, IdentityType.SamAccountName, samAccountName);
 
                 if (user == null)

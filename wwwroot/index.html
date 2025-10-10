@@ -19,12 +19,24 @@
             <div class="alert alert-warning text-start small mb-4">
                 <strong>Notice:</strong> Access to this system is restricted to authorized administrators. Unauthorized access is strictly prohibited.
             </div>
-            <p class="mb-4">If you are not an authorized user, please close your browser immediately.</p>
-            <p class="mb-4">Click "Login" to sign in automatically with your domain account.</p>
-            <button class="w-100 btn btn-lg btn-primary" id="login-btn">Login</button>
+            <form id="login-form" class="text-start">
+                <div class="mb-3">
+                    <label for="domain" class="form-label">Domain</label>
+                    <select id="domain" class="form-select" required></select>
+                </div>
+                <div class="mb-3">
+                    <label for="username" class="form-label">Username</label>
+                    <input type="text" class="form-control" id="username" required>
+                </div>
+                <div class="mb-3">
+                    <label for="password" class="form-label">Password</label>
+                    <input type="password" class="form-control" id="password" required>
+                </div>
+                <button type="submit" class="w-100 btn btn-lg btn-primary">Login</button>
+                <div id="login-error" class="alert alert-danger mt-3 d-none" role="alert"></div>
+            </form>
         </div>
     </div>
-
     <div id="error-screen" class="screen">
          <div class="text-center">
             <h1 id="error-title" class="text-danger"></h1>

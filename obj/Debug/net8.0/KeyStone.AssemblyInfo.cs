@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("KeyStone")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+ed3eb7df4b21ace6e83171776ef15f013af420ab")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+ba1816f8775f6ad6b061ae34d703517859d9cedd")]
 [assembly: System.Reflection.AssemblyProductAttribute("KeyStone")]
 [assembly: System.Reflection.AssemblyTitleAttribute("KeyStone")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

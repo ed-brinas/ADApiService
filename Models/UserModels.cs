@@ -4,6 +4,20 @@ namespace KeyStone.Models;
 
 // --- Request Models ---
 
+// MODIFIED START // Added LoginRequest model - 2025-10-10 07:58 AM
+public class LoginRequest
+{
+    [Required]
+    public string Domain { get; set; }
+
+    [Required]
+    public string Username { get; set; }
+
+    [Required]
+    public string Password { get; set; }
+}
+// MODIFIED END // Added LoginRequest model - 2025-10-10 07:58 AM
+
 public class CreateUserRequest
 {
     [Required]

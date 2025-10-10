@@ -1,5 +1,6 @@
 using KeyStone.Models;
 using KeyStone.Services;
+using Microsoft.AspNetCore.Authentication.Cookies; // MODIFIED // Added Cookie Authentication - 2025-10-10 07:58 AM
 using Microsoft.AspNetCore.Authentication.Negotiate;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -10,11 +11,15 @@ builder.Services.AddControllers();
 builder.Services.AddScoped<IAdService, AdService>();
 
 // --- Authentication & Authorization ---
-// This single registration works for both Kestrel and IIS.
-// Kestrel will use Negotiate. IIS integration will automatically
-// override this and use its own handler.
-builder.Services.AddAuthentication(NegotiateDefaults.AuthenticationScheme)
-   .AddNegotiate();
+// MODIFIED START // Replaced Negotiate with Cookie Authentication - 2025-10-10 07:58 AM
+builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+    .AddCookie(options =>
+    {
+        options.ExpireTimeSpan = TimeSpan.FromMinutes(20);
+        options.SlidingExpiration = true;
+        options.AccessDeniedPath = "/Forbidden/";
+    });
+// MODIFIED END // Replaced Negotiate with Cookie Authentication - 2025-10-10 07:58 AM
 
 builder.Services.AddAuthorization(options =>
 {
