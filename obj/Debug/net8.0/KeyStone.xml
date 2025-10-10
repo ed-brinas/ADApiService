@@ -1,0 +1,136 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>KeyStone</name>
+    </assembly>
+    <members>
+        <member name="T:KeyStone.Controllers.AuthController">
+            <summary>
+            Handles user authentication and provides user context.
+            </summary>
+        </member>
+        <member name="M:KeyStone.Controllers.AuthController.GetCurrentUser">
+            <summary>
+            Gets the context for the currently authenticated user.
+            </summary>
+            <returns>User context including name, permissions, and groups.</returns>
+        </member>
+        <member name="T:KeyStone.Controllers.HealthCheckController">
+            <summary>
+            Provides a simple endpoint to verify that the API is running.
+            </summary>
+        </member>
+        <member name="M:KeyStone.Controllers.HealthCheckController.Get">
+            <summary>
+            Returns a success status if the API is operational.
+            This endpoint does not require authentication.
+            </summary>
+        </member>
+        <member name="T:KeyStone.Controllers.UsersController">
+            <summary>
+            Manages user lifecycle operations in Active Directory.
+            </summary>
+        </member>
+        <member name="M:KeyStone.Controllers.UsersController.ListUsers(System.String,System.String,System.Nullable{System.Boolean},System.Nullable{System.Boolean})">
+            <summary>
+            Retrieves a list of users from a specified domain, with optional filters.
+            </summary>
+        </member>
+        <member name="M:KeyStone.Controllers.UsersController.GetUserDetails(System.String,System.String)">
+            <summary>
+            Gets detailed information for a single user account.
+            </summary>
+        </member>
+        <member name="M:KeyStone.Controllers.UsersController.CreateUser(KeyStone.Models.CreateUserRequest)">
+            <summary>
+            Creates a new standard or privileged user account.
+            </summary>
+        </member>
+        <member name="M:KeyStone.Controllers.UsersController.UpdateUser(KeyStone.Models.UpdateUserRequest)">
+            <summary>
+            Updates a user's optional group memberships and manages their associated admin account.
+            </summary>
+        </member>
+        <member name="M:KeyStone.Controllers.UsersController.ResetPassword(KeyStone.Models.UserActionRequest)">
+            <summary>
+            Resets a user's password to a new, randomly generated password.
+            </summary>
+        </member>
+        <member name="M:KeyStone.Controllers.UsersController.ResetAdminPassword(KeyStone.Models.ResetAdminPasswordRequest)">
+            <summary>
+            Resets the password for an associated admin account (-a account).
+            </summary>
+            <remarks>
+            This is a high-privilege operation and is restricted to authorized users.
+            The target account must reside in the configured Admin OU.
+            </remarks>
+        </member>
+        <member name="M:KeyStone.Controllers.UsersController.UnlockAccount(KeyStone.Models.UserActionRequest)">
+            <summary>
+            Unlocks a user's account if it is locked out.
+            </summary>
+        </member>
+        <member name="M:KeyStone.Controllers.UsersController.DisableAccount(KeyStone.Models.UserActionRequest)">
+            <summary>
+            Disables a user's account.
+            </summary>
+        </member>
+        <member name="M:KeyStone.Controllers.UsersController.EnableAccount(KeyStone.Models.UserActionRequest)">
+            <summary>
+            Enables a user's account.
+            </summary>
+        </member>
+        <member name="T:KeyStone.Models.ApiError">
+            <summary>
+            Represents a standardized API error response.
+            </summary>
+        </member>
+        <member name="P:KeyStone.Models.ApiError.Message">
+            <summary>
+            A high-level summary of the error.
+            </summary>
+        </member>
+        <member name="P:KeyStone.Models.ApiError.Detail">
+            <summary>
+            Optional: a more detailed, technical explanation of the error.
+            </summary>
+        </member>
+        <member name="T:KeyStone.Services.AdService">
+            <summary>
+            Implements the IAdService interface to provide Active Directory user management functionality.
+            </summary>
+        </member>
+        <member name="M:KeyStone.Services.AdService.ListUsersAsync(System.String,System.String,System.Nullable{System.Boolean},System.Nullable{System.Boolean})">
+            <inheritdoc />
+        </member>
+        <member name="M:KeyStone.Services.AdService.GetUserDetailsAsync(System.Security.Claims.ClaimsPrincipal,System.String,System.String)">
+            <inheritdoc />
+        </member>
+        <member name="M:KeyStone.Services.AdService.CreateUserAsync(System.Security.Claims.ClaimsPrincipal,KeyStone.Models.CreateUserRequest)">
+            <inheritdoc />
+        </member>
+        <member name="M:KeyStone.Services.AdService.UpdateUserAsync(System.Security.Claims.ClaimsPrincipal,KeyStone.Models.UpdateUserRequest)">
+            <inheritdoc />
+        </member>
+        <member name="M:KeyStone.Services.AdService.ResetPasswordAsync(KeyStone.Models.UserActionRequest)">
+            <inheritdoc />
+        </member>
+        <member name="M:KeyStone.Services.AdService.ResetAdminPasswordAsync(System.Security.Claims.ClaimsPrincipal,KeyStone.Models.ResetAdminPasswordRequest)">
+            <inheritdoc />
+        </member>
+        <member name="M:KeyStone.Services.AdService.UnlockAccountAsync(KeyStone.Models.UserActionRequest)">
+            <inheritdoc />
+        </member>
+        <member name="M:KeyStone.Services.AdService.DisableAccountAsync(KeyStone.Models.UserActionRequest)">
+            <inheritdoc />
+        </member>
+        <member name="M:KeyStone.Services.AdService.EnableAccountAsync(KeyStone.Models.UserActionRequest)">
+            <inheritdoc />
+        </member>
+        <member name="T:KeyStone.Services.IAdService">
+            <summary>
+            Defines the contract for the Active Directory service.
+            </summary>
+        </member>
+    </members>
+</doc>
